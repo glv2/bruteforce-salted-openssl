@@ -121,6 +121,8 @@ void * decryption_func(void *arg)
                 }
               EVP_CIPHER_CTX_cleanup(&ctx);
 
+              if(len == 0)
+                break;
               tab[0]++;
               if(tab[0] == charset_len)
                 tab[0] = 0;
@@ -129,7 +131,7 @@ void * decryption_func(void *arg)
                 {
                   j++;
                   tab[j]++;
-                  if(tab[j] == charset_len)
+                  if((j < len) && (tab[j] == charset_len))
                     tab[j] = 0;
                 }
             }
@@ -339,6 +341,11 @@ int main(int argc, char **argv)
     {
       fprintf(stderr, "Error: charset must have at least one character.\n\n");
       exit(EXIT_FAILURE);
+    }
+  if(nb_threads > charset_len)
+    {
+      fprintf(stderr, "Warning: number of threads (%u) bigger than character set length (%u). Only using %u threads.\n\n", nb_threads, charset_len, charset_len);
+      nb_threads = charset_len;
     }
   if(max_len < min_len)
     max_len = min_len;

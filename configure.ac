@@ -22,7 +22,7 @@ dnl Check for libraries
 AC_CHECK_LIB(pthread, pthread_create, [], AC_MSG_ERROR([POSIX threads library required]))
 AC_CHECK_HEADERS(pthread.h, [], AC_MSG_ERROR([OpenSSL headers required]))
 
-AC_CHECK_LIB(crypto, EVP_get_cipherbyname, [],AC_MSG_ERROR([OpenSSL libraries required]))
+AC_CHECK_LIB(crypto, EVP_get_cipherbyname, [], AC_MSG_ERROR([OpenSSL libraries required]))
 AC_CHECK_HEADERS(openssl/evp.h, [], AC_MSG_ERROR([OpenSSL headers required]))
 
 AC_CONFIG_FILES(Makefile)

@@ -7,9 +7,9 @@ config.status
 configure
 depcomp
 .deps/
+.dirstamp
 install-sh
 Makefile
 Makefile.in
 missing
-src/.dirstamp
 src/*.o

@@ -1,9 +1,9 @@
 bruteforce-salted-openssl
 =========================
 
-The purpose of this program is to try to decrypt a file that was encrypted
-with the 'openssl' command (e.g.: openssl enc -aes256 -salt -in clear.file
- -out encrypted.file).
+The purpose of this program is to try to find the password of a file that was
+encrypted with the 'openssl' command (e.g.: openssl enc -aes256 -salt
+-in clear.file -out encrypted.file).
 
 The program tries to decrypt the file by trying all the possible passwords.
 The minimum and maximum password length to try can be indicated as option
@@ -30,7 +30,7 @@ to modify the 'valid_data' function in the source code to match your needs.
 
 ## Examples
 
-Try to decrypt a aes256 encrypted file using 4 threads, trying
+Try to find the password of an aes256 encrypted file using 4 threads, trying
 only passwords with 5 characters:
 
     bruteforce-salted-openssl -t 4 -l 5 -m 5 -c aes256 encrypted.file

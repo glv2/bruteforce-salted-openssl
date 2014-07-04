@@ -1,5 +1,5 @@
 dnl Process this file with autoconf
-AC_INIT(bruteforce_salted_openssl, 1.0)
+AC_INIT(bruteforce_salted_openssl, 1.1)
 AM_INIT_AUTOMAKE
 AC_CONFIG_SRCDIR(src/bruteforce-salted-openssl.c)
 
@@ -14,7 +14,7 @@ dnl Check for functions
 AC_CHECK_FUNCS([malloc free])
 AC_CHECK_FUNCS([perror printf fprintf])
 AC_CHECK_FUNCS([atoi isprint])
-AC_CHECK_FUNCS([memset strcasecmp strlen strncmp])
+AC_CHECK_FUNCS([memset strcasecmp strlen strncmp strncpy])
 AC_CHECK_FUNCS([open fstat read close])
 AC_CHECK_FUNCS([getopt])
 

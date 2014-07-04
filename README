@@ -8,6 +8,7 @@ encrypted with the 'openssl' command (e.g.: openssl enc -aes256 -salt
 The program tries to decrypt the file by trying all the possible passwords.
 The minimum and maximum password length to try can be indicated as option
 on the command line.
+The beginning and the end of the password can be specified too.
 There are also options to indicate the cipher, digest, character set and
 number of threads to use.
 
@@ -34,6 +35,14 @@ Try to find the password of an aes256 encrypted file using 4 threads, trying
 only passwords with 5 characters:
 
     bruteforce-salted-openssl -t 4 -l 5 -m 5 -c aes256 encrypted.file
+
+
+Try to find the password of a des3 encrypted file using 8 threads, trying
+only passwords with 9 to 11 characters, beginning with "AbCD", ending with "Ef",
+and containing only letters:
+
+    bruteforce-salted-openssl -t 8 -l 9 -m 11 -c des3 -b "AbCD" -e "Ef" \
+      -s "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" encrypted.file
 
 
 Show the list of available algorithms:

@@ -31,8 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "version.h"
 
 unsigned char *default_charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-unsigned char *charset = NULL, *data = NULL, salt[8];
-unsigned int charset_len = 62, data_len = 0, min_len = 1, max_len = 8;
+unsigned char *charset = NULL, *data = NULL, salt[8], *prefix = NULL, *suffix = NULL;
+unsigned int charset_len = 62, data_len = 0, min_len = 1, max_len = 8, prefix_len = 0, suffix_len = 0;
 const EVP_CIPHER *cipher = NULL;
 const EVP_MD *digest = NULL;
 pthread_mutex_t found_password_lock;
@@ -64,17 +64,19 @@ int valid_data(unsigned char *data, unsigned int len)
     return(1);
 }
 
+/* The decryption_func thread function tests all the passwords of the form:
+ *   prefix + x + combination + suffix
+ * where x is a character in the range charset[arg[0]] -> charset[arg[1]]. */
 void * decryption_func(void *arg)
 {
-  unsigned char prefix, *password, *key, *iv, *out;
-  unsigned int index_start, index_end, prefix_len, len, out_len1, out_len2, i, j, k;
+  unsigned char *password, *key, *iv, *out;
+  unsigned int password_len, index_start, index_end, len, out_len1, out_len2, i, j, k;
   int ret;
   unsigned int *tab;
   EVP_CIPHER_CTX ctx;
 
   index_start = ((unsigned int *) arg)[0];
   index_end = ((unsigned int *) arg)[1];
-  prefix_len = 1;
   key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
   iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
   out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
@@ -84,35 +86,42 @@ void * decryption_func(void *arg)
       exit(EXIT_FAILURE);
     }
 
-  for(len = (min_len < prefix_len) ? 0 : min_len - prefix_len; len <= max_len - prefix_len; len++)
+  /* For every possible length */
+  for(len = min_len - prefix_len - 1 - suffix_len; len + 1 <= max_len - prefix_len - suffix_len; len++)
     {
+      /* For every first character in the range we were given */
       for(k = index_start; k <= index_end; k++)
         {
-          prefix = charset[k];
-
-          password = (unsigned char *) malloc(prefix_len + len + 1);
+          password_len = prefix_len + 1 + len + suffix_len;
+          password = (unsigned char *) malloc(password_len + 1);
           tab = (unsigned int *) malloc((len + 1) * sizeof(unsigned int));
           if((password == NULL) || (tab == NULL))
             {
               fprintf(stderr, "Error: memory allocation failed.\n\n");
               exit(EXIT_FAILURE);
             }
-          password[0] = prefix;
+          strncpy(password, prefix, prefix_len);
+          password[prefix_len] = charset[k];
+          strncpy(password + prefix_len + 1 + len, suffix, suffix_len);
+          password[password_len] = '\0';
 
           for(i = 0; i <= len; i++)
             tab[i] = 0;
+
+          /* Test all the combinations */
           while((tab[len] == 0) && (stop == 0))
             {
               for(i = 0; i < len; i++)
-                password[prefix_len + i] = charset[tab[len - 1 - i]];
-              password[prefix_len + len] = '\0';
+                password[prefix_len + 1 + i] = charset[tab[len - 1 - i]];
+
               /* Decrypt data with password */
-              EVP_BytesToKey(cipher, digest, salt, password, prefix_len + len, 1, key, iv);
+              EVP_BytesToKey(cipher, digest, salt, password, password_len, 1, key, iv);
               EVP_DecryptInit(&ctx, cipher, key, iv);
               EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
               ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
               if((ret == 1) && valid_data(out, out_len1 + out_len2))
                 {
+                  /* We have a positive result */
                   pthread_mutex_lock(&found_password_lock);
                   printf("Password candidate: %s\n", password);
                   if(only_one_password)
@@ -212,19 +221,23 @@ void list_digests(const EVP_MD *d, const char *from, const char *to, void *arg)
 
 void usage(char *progname)
 {
-  fprintf(stderr, "\nbruteforce-salted-openssl %s\n\n", VERSION);
+  fprintf(stderr, "\nbruteforce-salted-openssl %s\n\n", VERSION_NUMBER);
   fprintf(stderr, "Usage: %s [options] <filename>\n\n", progname);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "  -1           Stop the program after finding the first password candidate.\n");
   fprintf(stderr, "  -a           List the available cipher and digest algorithms.\n");
+  fprintf(stderr, "  -b <string>  Beginning of the password.\n");
+  fprintf(stderr, "                 default: \"\"\n");
   fprintf(stderr, "  -c <cipher>  Cipher for decryption.\n");
   fprintf(stderr, "                 default: aes-256-cbc\n");
   fprintf(stderr, "  -d <digest>  Digest for key and initialization vector generation.\n");
   fprintf(stderr, "                 default: md5\n");
+  fprintf(stderr, "  -e <string>  End of the password.\n");
+  fprintf(stderr, "                 default: \"\"\n");
   fprintf(stderr, "  -h           Show help and quit.\n");
-  fprintf(stderr, "  -l <length>  Minimum password length.\n");
+  fprintf(stderr, "  -l <length>  Minimum password length (beginning and end included).\n");
   fprintf(stderr, "                 default: 1\n");
-  fprintf(stderr, "  -m <length>  Maximum password length.\n");
+  fprintf(stderr, "  -m <length>  Maximum password length (beginning and end included).\n");
   fprintf(stderr, "                 default: 8\n");
   fprintf(stderr, "  -s <string>  Password character set.\n");
   fprintf(stderr, "                 default: \"0123456789ABCDEFGHIJKLMNOPQRSTU\n");
@@ -256,7 +269,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1ac:d:hl:m:s:t:")) != -1)
+  while((c = getopt(argc, argv, "1ab:c:d:e:hl:m:s:t:")) != -1)
     switch(c)
       {
       case '1':
@@ -266,6 +279,10 @@ int main(int argc, char **argv)
       case 'a':
         list_algorithms();
         exit(EXIT_FAILURE);
+        break;
+
+      case 'b':
+        prefix = optarg;
         break;
 
       case 'c':
@@ -286,6 +303,10 @@ int main(int argc, char **argv)
           }
         break;
 
+      case 'e':
+        suffix = optarg;
+        break;
+
       case 'h':
         usage(argv[0]);
         exit(EXIT_FAILURE);
@@ -293,8 +314,6 @@ int main(int argc, char **argv)
 
       case 'l':
         min_len = (unsigned int) atoi(optarg);
-        if(min_len == 0)
-          min_len = 1;
         break;
 
       case 'm':
@@ -313,10 +332,23 @@ int main(int argc, char **argv)
 
       default:
         usage(argv[0]);
-        if((optopt == 'c') || (optopt == 'd') || (optopt == 'l') || (optopt == 'm') || (optopt == 's') || (optopt == 't'))
-          fprintf(stderr, "Error: missing argument for option: '-%c'.\n\n", optopt);
-        else
-          fprintf(stderr, "Error: unknown option: '%c'.\n\n", optopt);
+        switch(optopt)
+          {
+          case 'b':
+          case 'c':
+          case 'd':
+          case 'e':
+          case 'l':
+          case 'm':
+          case 's':
+          case 't':
+            fprintf(stderr, "Error: missing argument for option: '-%c'.\n\n", optopt);
+            break;
+
+          default:
+            fprintf(stderr, "Error: unknown option: '%c'.\n\n", optopt);
+            break;
+          }
         exit(EXIT_FAILURE);
         break;
       }
@@ -330,10 +362,17 @@ int main(int argc, char **argv)
 
   filename = argv[optind];
 
+  /* Check variables */
   if(cipher == NULL)
     cipher = EVP_aes_256_cbc();
   if(digest == NULL)
     digest = EVP_md5();
+  if(prefix == NULL)
+    prefix = "";
+  prefix_len = strlen(prefix);
+  if(suffix == NULL)
+    suffix = "";
+  suffix_len = strlen(suffix);
   if(charset == NULL)
     charset = default_charset;
   charset_len = strlen(charset);
@@ -347,8 +386,16 @@ int main(int argc, char **argv)
       fprintf(stderr, "Warning: number of threads (%u) bigger than character set length (%u). Only using %u threads.\n\n", nb_threads, charset_len, charset_len);
       nb_threads = charset_len;
     }
+  if(min_len < prefix_len + suffix_len + 1)
+    {
+      fprintf(stderr, "Warning: minimum length (%u) isn't bigger than the length of specified password characters (%u). Setting minimum length to %u.\n\n", min_len, prefix_len + suffix_len, prefix_len + suffix_len + 1);
+      min_len = prefix_len + suffix_len + 1;
+    }
   if(max_len < min_len)
-    max_len = min_len;
+    {
+      fprintf(stderr, "Warning: maximum length (%u) is smaller than minimum length (%u). Setting maximum length to %u.\n\n", max_len, min_len, min_len);
+      max_len = min_len;
+    }
 
   /* Check header */
   fd = open(filename, O_RDONLY);

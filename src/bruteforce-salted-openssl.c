@@ -57,6 +57,7 @@ const EVP_MD *digest = NULL;
 pthread_mutex_t found_password_lock;
 char stop = 0, only_one_password = 0;
 int solution = 0;
+long limit = 0, count = 0;
 
 
 /*
@@ -164,6 +165,16 @@ void * decryption_func(void *arg)
                   pthread_mutex_unlock(&found_password_lock);
                 }
               EVP_CIPHER_CTX_cleanup(&ctx);
+              if (limit)
+              {
+                  pthread_mutex_lock(&found_password_lock);
+                  if (limit <= count ++)
+                  {
+                    printf("Maximum number of passphrases tested, aborting.\n");
+                    stop = 1;
+                  }
+                  pthread_mutex_unlock(&found_password_lock);
+              }
 
               if(len == 0)
                 break;
@@ -280,6 +291,7 @@ void usage(char *progname)
   fprintf(stderr, "  -t <n>       Number of threads to use.\n");
   fprintf(stderr, "                 default: 1\n");
   fprintf(stderr, "  -B <string>  Search using binary passphrase, write candidates to file <string>.\n");
+  fprintf(stderr, "  -L <value>   Limit the maximum number of tested passphrases to <value>.\n");
   fprintf(stderr, "\n");
 }
 
@@ -305,7 +317,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1ab:c:d:e:hl:m:s:t:B:")) != -1)
+  while((c = getopt(argc, argv, "1ab:c:d:e:hl:m:s:t:B:L:")) != -1)
     switch(c)
       {
       case '1':
@@ -370,6 +382,10 @@ int main(int argc, char **argv)
         binary = optarg;
         break;
 
+      case 'L':
+        limit = (long) atol(optarg);
+        break;
+
       default:
         usage(argv[0]);
         switch(optopt)
@@ -383,6 +399,7 @@ int main(int argc, char **argv)
           case 's':
           case 't':
           case 'B':
+          case 'L':
             fprintf(stderr, "Error: missing argument for option: '-%c'.\n\n", optopt);
             break;
 

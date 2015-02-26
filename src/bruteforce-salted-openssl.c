@@ -57,7 +57,7 @@ const EVP_MD *digest = NULL;
 pthread_mutex_t found_password_lock;
 char stop = 0, only_one_password = 0;
 int solution = 0;
-long limit = 0, count = 0;
+long limit = 0, count = 1, overall = 0;
 
 
 /*
@@ -170,8 +170,18 @@ void * decryption_func(void *arg)
                   pthread_mutex_lock(&found_password_lock);
                   if (limit <= count ++)
                   {
-                    printf("Maximum number of passphrases tested, aborting.\n");
-                    stop = 1;
+                    if(only_one_password)
+                    {
+                      printf("Maximum number of passphrases tested, aborting.\n");
+                      stop = 1;
+                    } else {
+                      overall = overall + count - 1;
+                      if (binary == NULL)
+                        printf("Just tested solution %d: %s\n", overall, password);
+                      else
+                        printf("Just tested solution %d\n", overall);
+                      count -= limit;
+                    }
                   }
                   pthread_mutex_unlock(&found_password_lock);
               }

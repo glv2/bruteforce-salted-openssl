@@ -66,23 +66,25 @@ long limit = 0, count = 1, overall = 0;
 
 int valid_data(unsigned char *data, unsigned int len)
 {
-  unsigned int i;
+  unsigned int i, trigger;
   unsigned char c;
   unsigned int bad = 0;
+
+  /* Consider the decrypted data as invalid if there is more than 10% of not printable characters */
+  trigger = len / 10;
 
   /* Count the number of not printable characters */
   for(i = 0; i < len; i++)
     {
       c = data[i];
       if(!isprint(c))
+      {
         bad++;
+        if (bad > trigger) return (0);
+      }
     }
 
-  /* Consider the decrypted data as invalid if there is more than 10% of not printable characters */
-  if(bad > len / 10)
-    return(0);
-  else
-    return(1);
+  return(1);
 }
 
 /* The decryption_func thread function tests all the passwords of the form:

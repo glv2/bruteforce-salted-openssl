@@ -55,7 +55,7 @@ unsigned int charset_len = 62, data_len = 0, min_len = 1, max_len = 8, prefix_le
 const EVP_CIPHER *cipher = NULL;
 const EVP_MD *digest = NULL;
 pthread_mutex_t found_password_lock;
-char stop = 0, only_one_password = 0;
+char stop = 0, only_one_password = 0, no_error = 0;
 int solution = 0;
 long limit = 0, count = 1, overall = 0;
 
@@ -140,6 +140,9 @@ void * decryption_func(void *arg)
               EVP_DecryptInit(&ctx, cipher, key, iv);
               EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
               ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
+
+              if (no_error) ret = 1;
+
               if((ret == 1) && valid_data(out, out_len1 + out_len2))
                 {
                   /* We have a positive result */
@@ -302,6 +305,7 @@ void usage(char *progname)
   fprintf(stderr, "                 default: 1\n");
   fprintf(stderr, "  -B <string>  Search using binary passphrase, write candidates to file <string>.\n");
   fprintf(stderr, "  -L <value>   Limit the maximum number of tested passphrases to <value>.\n");
+  fprintf(stderr, "  -N           Ignore decryption errors (similar to opensll -nopad).\n");
   fprintf(stderr, "\n");
 }
 
@@ -327,7 +331,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1ab:c:d:e:hl:m:s:t:B:L:")) != -1)
+  while((c = getopt(argc, argv, "1ab:c:d:e:hl:m:s:t:B:L:N")) != -1)
     switch(c)
       {
       case '1':
@@ -394,6 +398,10 @@ int main(int argc, char **argv)
 
       case 'L':
         limit = (long) atol(optarg);
+        break;
+
+      case 'N':
+        no_error = 1;
         break;
 
       default:

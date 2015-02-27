@@ -50,7 +50,7 @@ unsigned char *binary_charset =      "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x
                                  "\xE0\xE1\xE2\xE3\xE4\xE5\xE6\xE7\xE8\xE9\xEA\xEB\xEC\xED\xEE\xEF"
                                  "\xF0\xF1\xF2\xF3\xF4\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF";
 
-unsigned char *charset = NULL, *data = NULL, salt[8], *prefix = NULL, *suffix = NULL, *binary = NULL;
+unsigned char *charset = NULL, *data = NULL, salt[8], *prefix = NULL, *suffix = NULL, *binary = NULL, *magic = NULL;
 unsigned int charset_len = 62, data_len = 0, min_len = 1, max_len = 8, prefix_len = 0, suffix_len = 0;
 const EVP_CIPHER *cipher = NULL;
 const EVP_MD *digest = NULL;
@@ -94,7 +94,7 @@ void * decryption_func(void *arg)
 {
   unsigned char *password, *key, *iv, *out;
   unsigned int password_len, index_start, index_end, len, out_len1, out_len2, i, j, k;
-  int ret;
+  int ret, found;
   unsigned int *tab;
   EVP_CIPHER_CTX ctx;
 
@@ -143,9 +143,15 @@ void * decryption_func(void *arg)
               EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
               ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
 
-              if (no_error) ret = 1;
+              if (no_error || ret == 1)
+              {
+                if(magic == NULL)
+                  found = valid_data(out, out_len1 + out_len2);
+                else
+                  found = !strncmp(out, magic, strlen(magic));
+              } else found = 0;
 
-              if((ret == 1) && valid_data(out, out_len1 + out_len2))
+              if(found)
                 {
                   /* We have a positive result */
                   pthread_mutex_lock(&found_password_lock);
@@ -307,6 +313,7 @@ void usage(char *progname)
   fprintf(stderr, "                 default: 1\n");
   fprintf(stderr, "  -B <string>  Search using binary passphrase, write candidates to file <string>.\n");
   fprintf(stderr, "  -L <value>   Limit the maximum number of tested passphrases to <value>.\n");
+  fprintf(stderr, "  -M <string>  Use this 'Magic' string to confirm successful decryption\n");
   fprintf(stderr, "  -N           Ignore decryption errors (similar to opensll -nopad).\n");
   fprintf(stderr, "\n");
 }
@@ -333,7 +340,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1ab:c:d:e:hl:m:s:t:B:L:N")) != -1)
+  while((c = getopt(argc, argv, "1ab:c:d:e:hl:m:s:t:B:L:M:N")) != -1)
     switch(c)
       {
       case '1':
@@ -402,6 +409,10 @@ int main(int argc, char **argv)
         limit = (long) atol(optarg);
         break;
 
+      case 'M':
+        magic = optarg;
+        break;
+
       case 'N':
         no_error = 1;
         break;
@@ -420,6 +431,7 @@ int main(int argc, char **argv)
           case 't':
           case 'B':
           case 'L':
+          case 'M':
             fprintf(stderr, "Error: missing argument for option: '-%c'.\n\n", optopt);
             break;
 

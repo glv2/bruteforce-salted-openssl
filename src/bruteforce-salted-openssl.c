@@ -57,7 +57,7 @@ const EVP_MD *digest = NULL;
 pthread_mutex_t found_password_lock;
 char stop = 0, only_one_password = 0, no_error = 0;
 int solution = 0;
-long limit = 0, count = 1, overall = 0;
+long unsigned int limit = 0, count = 1, overall = 0;
 
 
 /*
@@ -167,7 +167,7 @@ void * decryption_func(void *arg)
                       perror("open file");
                     else {
                       printf("Password candidate saved to file: %s \n", outfile);
-                      write(fd, password, password_len);
+                      ret = write(fd, password, password_len);
                       close(fd);
                     }
                   }
@@ -188,9 +188,9 @@ void * decryption_func(void *arg)
                     } else {
                       overall = overall + count - 1;
                       if (binary == NULL)
-                        printf("Just tested solution %d: %s\n", overall, password);
+                        printf("Just tested solution %lu: %s\n", overall, password);
                       else
-                        printf("Just tested solution %d\n", overall);
+                        printf("Just tested solution %lu\n", overall);
                       count -= limit;
                     }
                   }
@@ -313,8 +313,8 @@ void usage(char *progname)
   fprintf(stderr, "                 default: 1\n");
   fprintf(stderr, "  -B <string>  Search using binary passphrase, write candidates to file <string>.\n");
   fprintf(stderr, "  -L <value>   Limit the maximum number of tested passphrases to <value>.\n");
-  fprintf(stderr, "  -M <string>  Use this 'Magic' string to confirm successful decryption\n");
-  fprintf(stderr, "  -N           Ignore decryption errors (similar to opensll -nopad).\n");
+  fprintf(stderr, "  -M <string>  Use this 'Magic' string to confirm successful decryption.\n");
+  fprintf(stderr, "  -N           Ignore decryption errors (similar to openssl -nopad).\n");
   fprintf(stderr, "\n");
 }
 

@@ -21,12 +21,60 @@ available with the OpenSSL libraries installed on your system.
 The program requires the OpenSSL libraries.
 
 
+## Available options
+
+  -1           Stop the program after finding the first password candidate.
+
+  -a           List the available cipher and digest algorithms.
+
+  -B <string>  Search using binary passwords (instead of character passwords).
+               Write candidates to file <string>.
+
+  -b <string>  Beginning of the password.
+               default: ""
+
+  -c <cipher>  Cipher for decryption.
+               default: aes-256-cbc
+
+  -d <digest>  Digest for key and initialization vector generation.
+               default: md5
+
+  -e <string>  End of the password.
+               default: ""
+
+  -h           Show help and quit.
+
+  -L <value>   If the option -1 is activated, limit the maximum number of
+               tested passwords to <value>. If not, print a message every
+               <value> passwords tested.
+
+  -l <length>  Minimum password length (beginning and end included).
+               default: 1
+
+  -M <string>  Consider the decryption as successful when the data starts
+               with <string>. Without this option, the decryption is considered
+               as successful when the data contains mostly printable ASCII
+               characters (at least 90%).
+
+  -m <length>  Maximum password length (beginning and end included).
+               default: 8
+
+  -N           Ignore decryption errors (similar to openssl -nopad).
+  -s <string>  Password character set.
+               default: "0123456789ABCDEFGHIJKLMNOPQRSTU
+                         VWXYZabcdefghijklmnopqrstuvwxyz"
+
+  -t <n>       Number of threads to use.
+               default: 1
+
+
 ## Limitations
 
 The program considers decrypted data as correct if it is mainly composed of
 printable ASCII characters (at least 90%).
 If the file you want to decrypt doesn't contain plain text, you will have
-to modify the 'valid_data' function in the source code to match your needs.
+to either use the -M option, or modify the 'valid_data' function in the source
+code to match your needs.
 
 
 ## Examples
@@ -59,4 +107,6 @@ using the 'openssl' command:
 ## Donations
 
 If you find this program useful and want to make a donation, you can send coins
-to the following Peercoin address: PWFNV1Cvq7nQBRyRueuYzwmDNXUGpgNkBC.
+to one of the following addresses:
+ - Peercoin: PWFNV1Cvq7nQBRyRueuYzwmDNXUGpgNkBC
+ - Bitcoin: 1F1ZfM7XtggHsShK4vwuy9zv98a9wt7nXx

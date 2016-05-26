@@ -1,7 +1,7 @@
 /*
 Bruteforce a file encrypted (with salt) by openssl.
 
-Copyright 2014-2015 Guillaume LE VAILLANT
+Copyright 2014-2016 Guillaume LE VAILLANT
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,19 +20,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include <fcntl.h>
 #include <openssl/evp.h>
+#include <locale.h>
+#include <math.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #include "version.h"
 
 unsigned char *default_charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-                                /* 0x00 is not included as passphrases are null terminated */
+                                /* 0x00 is not included as passwords are null terminated */
 unsigned char *binary_charset =     "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F"
                                 "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
                                 "\x20\x21\x22\x23\x24\x25\x26\x27\x28\x29\x2A\x2B\x2C\x2D\x2E\x2F"
@@ -50,14 +54,47 @@ unsigned char *binary_charset =     "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0
                                 "\xE0\xE1\xE2\xE3\xE4\xE5\xE6\xE7\xE8\xE9\xEA\xEB\xEC\xED\xEE\xEF"
                                 "\xF0\xF1\xF2\xF3\xF4\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF";
 
-unsigned char *charset = NULL, *data = NULL, salt[8], *prefix = NULL, *suffix = NULL, *binary = NULL, *magic = NULL;
-unsigned int charset_len = 62, data_len = 0, min_len = 1, max_len = 8, prefix_len = 0, suffix_len = 0;
+unsigned char *path = NULL, *data = NULL, salt[8], *binary = NULL, *magic = NULL;
+wchar_t *charset = NULL, *prefix = NULL, *suffix = NULL;
+unsigned int charset_len, data_len = 0, min_len = 1, max_len = 8, prefix_len = 0, suffix_len = 0;
+FILE *dictionary = NULL;
 const EVP_CIPHER *cipher = NULL;
 const EVP_MD *digest = NULL;
-pthread_mutex_t found_password_lock;
-char stop = 0, only_one_password = 0, no_error = 0;
-int solution = 0;
-long unsigned int limit = 0, count = 1, overall = 0;
+pthread_mutex_t found_password_lock, dictionary_lock;
+char stop = 0, only_one_password = 0, found_password = 0, no_error = 0;
+unsigned int nb_threads = 1;
+unsigned long long int limit = 0, print = 0, count_limit = 0, count_print = 0;
+struct decryption_func_locals
+{
+  unsigned int index_start;
+  unsigned int index_end;
+  unsigned long long int counter;
+} *thread_locals;
+
+
+/*
+ * Statistics
+ */
+
+void handle_signal(int signo)
+{
+  unsigned long long int total_ops = 0;
+  unsigned int i, l;
+  unsigned int l_full = max_len - suffix_len - prefix_len;
+  unsigned int l_skip = min_len - suffix_len - prefix_len;
+  double space = 0;
+
+  if(dictionary == NULL)
+    for(l = l_skip; l <= l_full; l++)
+      space += pow(charset_len, l);
+
+  for(i = 0; i < nb_threads; i++)
+    total_ops += thread_locals[i].counter;
+
+  fprintf(stderr, "Tried passwords: %llu\n", total_ops);
+  if(dictionary == NULL)
+    fprintf(stderr, "Total space searched: %lf%%\n", (total_ops / space) * 100);
+}
 
 
 /*
@@ -90,17 +127,20 @@ int valid_data(unsigned char *data, unsigned int len)
 
 /* The decryption_func thread function tests all the passwords of the form:
  *   prefix + x + combination + suffix
- * where x is a character in the range charset[arg[0]] -> charset[arg[1]]. */
+ * where x is a character in the range charset[dfargs.index_start] -> charset[dfargs.index_end]. */
 void * decryption_func(void *arg)
 {
-  unsigned char *password, *key, *iv, *out;
-  unsigned int password_len, index_start, index_end, len, out_len1, out_len2, i, j, k;
+  struct decryption_func_locals *dfargs;
+  wchar_t *password;
+  unsigned char *pwd, *key, *iv, *out;
+  unsigned int password_len, pwd_len, index_start, index_end, len, out_len1, out_len2, i, j, k;
   int ret, found;
   unsigned int *tab;
   EVP_CIPHER_CTX ctx;
 
-  index_start = ((unsigned int *) arg)[0];
-  index_end = ((unsigned int *) arg)[1];
+  dfargs = (struct decryption_func_locals *) arg;
+  index_start = dfargs->index_start;
+  index_end = dfargs->index_end;
   key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
   iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
   out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
@@ -117,16 +157,16 @@ void * decryption_func(void *arg)
       for(k = index_start; k <= index_end; k++)
         {
           password_len = prefix_len + 1 + len + suffix_len;
-          password = (unsigned char *) malloc(password_len + 1);
-          tab = (unsigned int *) malloc((len + 1) * sizeof(unsigned int));
+          password = (wchar_t *) calloc(password_len + 1, sizeof(wchar_t));
+          tab = (unsigned int *) calloc(len + 1, sizeof(unsigned int));
           if((password == NULL) || (tab == NULL))
             {
               fprintf(stderr, "Error: memory allocation failed.\n\n");
               exit(EXIT_FAILURE);
             }
-          strncpy(password, prefix, prefix_len);
+          wcsncpy(password, prefix, prefix_len);
           password[prefix_len] = charset[k];
-          strncpy(password + prefix_len + 1 + len, suffix, suffix_len);
+          wcsncpy(password + prefix_len + 1 + len, suffix, suffix_len);
           password[password_len] = '\0';
 
           for(i = 0; i <= len; i++)
@@ -137,12 +177,21 @@ void * decryption_func(void *arg)
             {
               for(i = 0; i < len; i++)
                 password[prefix_len + 1 + i] = charset[tab[len - 1 - i]];
+              pwd_len = wcstombs(NULL, password, 0);
+              pwd = (unsigned char *) malloc(pwd_len + 1);
+              if(pwd == NULL)
+                {
+                  fprintf(stderr, "Error: memory allocation failed.\n\n");
+                  exit(EXIT_FAILURE);
+                }
+              wcstombs(pwd, password, pwd_len + 1);
 
               /* Decrypt data with password */
-              EVP_BytesToKey(cipher, digest, salt, password, password_len, 1, key, iv);
+              EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
               EVP_DecryptInit(&ctx, cipher, key, iv);
               EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
               ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
+              dfargs->counter++;
 
               if(no_error || (ret == 1))
                 {
@@ -157,25 +206,10 @@ void * decryption_func(void *arg)
               if(found)
                 {
                   /* We have a positive result */
+                  handle_signal(SIGUSR1); /* Print some stats */
                   pthread_mutex_lock(&found_password_lock);
-                  if(binary == NULL)
-                    printf("Password candidate: %s\n", password);
-                  else
-                    {
-                      int fd;
-                      char outfile[128];
-
-                      sprintf(outfile, "%s-%d", binary, solution++);
-                      fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-                      if(fd == -1)
-                        perror("open file");
-                      else
-                        {
-                          printf("Password candidate saved to file: %s \n", outfile);
-                          ret = write(fd, password, password_len);
-                          close(fd);
-                        }
-                    }
+                  found_password++;
+                  printf("Password candidate: %ls\n", password);
                   if(only_one_password)
                     stop = 1;
                   pthread_mutex_unlock(&found_password_lock);
@@ -183,28 +217,30 @@ void * decryption_func(void *arg)
 
               EVP_CIPHER_CTX_cleanup(&ctx);
 
-              if(limit)
+              if(print > 0)
                 {
                   pthread_mutex_lock(&found_password_lock);
-                  if(limit <= count++)
+                  count_print++;
+                  if(count_print > print)
                     {
-                      if(only_one_password)
-                        {
-                          printf("Maximum number of passphrases tested, aborting.\n");
-                          stop = 1;
-                        }
-                      else
-                        {
-                          overall = overall + count - 1;
-                          if(binary == NULL)
-                            printf("Just tested solution %lu: %s\n", overall, password);
-                          else
-                            printf("Just tested solution %lu\n", overall);
-                          count -= limit;
-                        }
+                      fprintf(stderr, "Just tested password: %ls\n", password);
+                      count_print = 0;
                     }
                   pthread_mutex_unlock(&found_password_lock);
-              }
+                }
+              if(limit > 0)
+                {
+                  pthread_mutex_lock(&found_password_lock);
+                  count_limit++;
+                  if(count_limit > limit)
+                    {
+                      fprintf(stderr, "Maximum number of passphrases tested, aborting.\n");
+                      stop = 1;
+                    }
+                  pthread_mutex_unlock(&found_password_lock);
+                }
+
+              free(pwd);
 
               if(len == 0)
                 break;
@@ -224,6 +260,285 @@ void * decryption_func(void *arg)
           free(password);
         }
     }
+
+  free(out);
+  free(iv);
+  free(key);
+
+  pthread_exit(NULL);
+}
+
+void * decryption_func_binary(void *arg)
+{
+  struct decryption_func_locals *dfargs;
+  unsigned char *pwd, *key, *iv, *out;
+  unsigned int pwd_len, index_start, index_end, len, out_len1, out_len2, i, j, k;
+  int ret, found;
+  unsigned int *tab;
+  EVP_CIPHER_CTX ctx;
+  int fd;
+  char outfile[128];
+
+  dfargs = (struct decryption_func_locals *) arg;
+  index_start = dfargs->index_start;
+  index_end = dfargs->index_end;
+  key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
+  iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
+  out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
+  if((key == NULL) || (iv == NULL) || (out == NULL))
+    {
+      fprintf(stderr, "Error: memory allocation failed.\n\n");
+      exit(EXIT_FAILURE);
+    }
+
+  /* For every possible length */
+  for(len = min_len - prefix_len - 1 - suffix_len; len + 1 <= max_len - prefix_len - suffix_len; len++)
+    {
+      /* For every first character in the range we were given */
+      for(k = index_start; k <= index_end; k++)
+        {
+          pwd_len = prefix_len + 1 + len + suffix_len;
+          pwd = (unsigned char *) calloc(pwd_len + 1, sizeof(unsigned char));
+          tab = (unsigned int *) calloc(len + 1, sizeof(unsigned int));
+          if((pwd == NULL) || (tab == NULL))
+            {
+              fprintf(stderr, "Error: memory allocation failed.\n\n");
+              exit(EXIT_FAILURE);
+            }
+          wcstombs(pwd, prefix, prefix_len);
+          pwd[prefix_len] = binary_charset[k];
+          wcstombs(pwd + prefix_len + 1 + len, suffix, suffix_len);
+          pwd[pwd_len] = '\0';
+
+          for(i = 0; i <= len; i++)
+            tab[i] = 0;
+
+          /* Test all the combinations */
+          while((tab[len] == 0) && (stop == 0))
+            {
+              for(i = 0; i < len; i++)
+                pwd[prefix_len + 1 + i] = binary_charset[tab[len - 1 - i]];
+
+              /* Decrypt data with password */
+              EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
+              EVP_DecryptInit(&ctx, cipher, key, iv);
+              EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
+              ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
+              dfargs->counter++;
+
+              if(no_error || (ret == 1))
+                {
+                  if(magic == NULL)
+                    found = valid_data(out, out_len1 + out_len2);
+                  else
+                    found = !strncmp(out, magic, strlen(magic));
+                }
+              else
+                found = 0;
+
+              if(found)
+                {
+                  /* We have a positive result */
+                  handle_signal(SIGUSR1); /* Print some stats */
+                  pthread_mutex_lock(&found_password_lock);
+                  sprintf(outfile, "%s-%d", binary, found_password);
+                  found_password++;
+                  fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                  if(fd == -1)
+                    perror("open file");
+                  else
+                    {
+                      printf("Password candidate saved to file: %s\n", outfile);
+                      ret = write(fd, pwd, pwd_len);
+                      close(fd);
+                    }
+                  if(only_one_password)
+                    stop = 1;
+                  pthread_mutex_unlock(&found_password_lock);
+                }
+
+              EVP_CIPHER_CTX_cleanup(&ctx);
+
+              if(limit > 0)
+                {
+                  pthread_mutex_lock(&found_password_lock);
+                  count_limit++;
+                  if(count_limit > limit)
+                    {
+                      fprintf(stderr, "Maximum number of passwords tested, aborting.\n");
+                      stop = 1;
+                    }
+                  pthread_mutex_unlock(&found_password_lock);
+                }
+
+              if(len == 0)
+                break;
+              tab[0]++;
+              if(tab[0] == charset_len)
+                tab[0] = 0;
+              j = 0;
+              while(tab[j] == 0)
+                {
+                  j++;
+                  tab[j]++;
+                  if((j < len) && (tab[j] == charset_len))
+                    tab[j] = 0;
+                }
+            }
+          free(tab);
+          free(pwd);
+        }
+    }
+
+  free(out);
+  free(iv);
+  free(key);
+
+  pthread_exit(NULL);
+}
+
+int read_dictionary_line(unsigned char **line, unsigned int *n)
+{
+  unsigned int size;
+  int ret;
+
+  *n = 0;
+  size = 32;
+  *line = (unsigned char *) malloc(size);
+  if(*line == NULL)
+    {
+      fprintf(stderr, "Error: memory allocation failed.\n\n");
+      exit(EXIT_FAILURE);
+    }
+
+  pthread_mutex_lock(&dictionary_lock);
+  while(1)
+    {
+      ret = fgetc(dictionary);
+      if(ret == EOF)
+        {
+          if(*n == 0)
+            {
+              free(*line);
+              *line = NULL;
+              pthread_mutex_unlock(&dictionary_lock);
+              return(0);
+            }
+          else
+            break;
+        }
+
+      if((ret == '\r') || (ret == '\n'))
+        {
+          if(*n == 0)
+              continue;
+          else
+            break;
+        }
+
+      (*line)[*n] = (unsigned char) ret;
+      (*n)++;
+
+      if(*n == size)
+        {
+          size *= 2;
+          *line = (unsigned char *) realloc(*line, size);
+          if(*line == NULL)
+            {
+              fprintf(stderr, "Error: memory allocation failed.\n\n");
+              pthread_mutex_unlock(&dictionary_lock);
+              exit(EXIT_FAILURE);
+            }
+        }
+    }
+  pthread_mutex_unlock(&dictionary_lock);
+
+  (*line)[*n] = '\0';
+
+  return(1);
+}
+
+void * decryption_func_dictionary(void *arg)
+{
+  struct decryption_func_locals *dfargs;
+  unsigned char *pwd, *key, *iv, *out;
+  unsigned int pwd_len, len, out_len1, out_len2;
+  int ret, found;
+  EVP_CIPHER_CTX ctx;
+
+  dfargs = (struct decryption_func_locals *) arg;
+
+  key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
+  iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
+  out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
+  if((key == NULL) || (iv == NULL) || (out == NULL))
+    {
+      fprintf(stderr, "Error: memory allocation failed.\n\n");
+      exit(EXIT_FAILURE);
+    }
+
+  do
+    {
+      ret = read_dictionary_line(&pwd, &pwd_len);
+      if(ret == 0)
+        break;
+
+      /* Decrypt data with password */
+      EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
+      EVP_DecryptInit(&ctx, cipher, key, iv);
+      EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
+      ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
+      dfargs->counter++;
+      if(no_error || (ret == 1))
+        {
+          if(magic == NULL)
+            found = valid_data(out, out_len1 + out_len2);
+          else
+            found = !strncmp(out, magic, strlen(magic));
+        }
+      else
+        found = 0;
+
+      if(found)
+        {
+          /* We have a positive result */
+          handle_signal(SIGUSR1); /* Print some stats */
+          pthread_mutex_lock(&found_password_lock);
+          found_password++;
+          printf("Password candidate: %s\n", pwd);
+          if(only_one_password)
+            stop = 1;
+          pthread_mutex_unlock(&found_password_lock);
+        }
+
+      EVP_CIPHER_CTX_cleanup(&ctx);
+
+      if(print > 0)
+        {
+          pthread_mutex_lock(&found_password_lock);
+          count_print++;
+          if(count_print > print)
+            {
+              fprintf(stderr, "Just tested password: %s\n", pwd);
+              count_print = 0;
+            }
+          pthread_mutex_unlock(&found_password_lock);
+        }
+      if(limit > 0)
+        {
+          pthread_mutex_lock(&found_password_lock);
+          count_limit++;
+          if(count_limit > limit)
+            {
+              fprintf(stderr, "Maximum number of passphrases tested, aborting.\n");
+              stop = 1;
+            }
+          pthread_mutex_unlock(&found_password_lock);
+        }
+
+      free(pwd);
+    }
+  while(stop == 0);
 
   free(out);
   free(iv);
@@ -302,34 +617,37 @@ void usage(char *progname)
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "  -1           Stop the program after finding the first password candidate.\n\n");
   fprintf(stderr, "  -a           List the available cipher and digest algorithms.\n\n");
-  fprintf(stderr, "  -B <string>  Search using binary passwords (instead of character passwords).\n");
-  fprintf(stderr, "               Write candidates to file <string>.\n\n");
+  fprintf(stderr, "  -B <file>    Search using binary passwords (instead of character passwords).\n");
+  fprintf(stderr, "               Write candidates to <file>.\n\n");
   fprintf(stderr, "  -b <string>  Beginning of the password.\n");
-  fprintf(stderr, "               default: \"\"\n\n");
+  fprintf(stderr, "                 default: \"\"\n\n");
   fprintf(stderr, "  -c <cipher>  Cipher for decryption.\n");
-  fprintf(stderr, "               default: aes-256-cbc\n\n");
+  fprintf(stderr, "                 default: aes-256-cbc\n\n");
   fprintf(stderr, "  -d <digest>  Digest for key and initialization vector generation.\n");
-  fprintf(stderr, "               default: md5\n\n");
+  fprintf(stderr, "                 default: md5\n\n");
   fprintf(stderr, "  -e <string>  End of the password.\n");
-  fprintf(stderr, "               default: \"\"\n\n");
+  fprintf(stderr, "                 default: \"\"\n\n");
+  fprintf(stderr, "  -f <file>    Read the passwords from a file instead of generating them.\n\n");
   fprintf(stderr, "  -h           Show help and quit.\n\n");
-  fprintf(stderr, "  -L <value>   If the option -1 is activated, limit the maximum number of\n");
-  fprintf(stderr, "               tested passwords to <value>. If not, print a message every\n");
-  fprintf(stderr, "               <value> passwords tested.\n\n");
+  fprintf(stderr, "  -L <n>       Limit the maximum number of tested passwords to <n>.\n\n");
   fprintf(stderr, "  -l <length>  Minimum password length (beginning and end included).\n");
-  fprintf(stderr, "               default: 1\n\n");
+  fprintf(stderr, "                 default: 1\n\n");
   fprintf(stderr, "  -M <string>  Consider the decryption as successful when the data starts\n");
   fprintf(stderr, "               with <string>. Without this option, the decryption is considered\n");
   fprintf(stderr, "               as successful when the data contains mostly printable ASCII\n");
   fprintf(stderr, "               characters (at least 90%%).\n\n");
   fprintf(stderr, "  -m <length>  Maximum password length (beginning and end included).\n");
-  fprintf(stderr, "               default: 8\n\n");
-  fprintf(stderr, "  -N           Ignore decryption errors (similar to openssl -nopad).\n");
+  fprintf(stderr, "                 default: 8\n\n");
+  fprintf(stderr, "  -N           Ignore decryption errors (similar to openssl -nopad).\n\n");
+  fprintf(stderr, "  -p <n>       Print a message every <n> passwords tested.\n\n");
   fprintf(stderr, "  -s <string>  Password character set.\n");
   fprintf(stderr, "               default: \"0123456789ABCDEFGHIJKLMNOPQRSTU\n");
   fprintf(stderr, "                         VWXYZabcdefghijklmnopqrstuvwxyz\"\n\n");
   fprintf(stderr, "  -t <n>       Number of threads to use.\n");
   fprintf(stderr, "               default: 1\n\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Sending a USR1 signal to a running bruteforce-salted-openssl process\n");
+  fprintf(stderr, "makes it print progress info to standard error and continue.\n");
   fprintf(stderr, "\n");
 }
 
@@ -344,10 +662,8 @@ void list_algorithms(void)
 
 int main(int argc, char **argv)
 {
-  unsigned int nb_threads = 1;
   pthread_t *decryption_threads;
   char *filename;
-  unsigned int **indexes;
   int fd, i, ret, c;
   struct stat file_stats;
 
@@ -355,7 +671,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1aB:b:c:d:e:hL:l:M:m:Ns:t:")) != -1)
+  while((c = getopt(argc, argv, "1aB:b:c:d:e:f:hL:l:M:m:Np:s:t:")) != -1)
     switch(c)
       {
       case '1':
@@ -372,7 +688,19 @@ int main(int argc, char **argv)
         break;
 
       case 'b':
-        prefix = optarg;
+        prefix_len = mbstowcs(NULL, optarg, 0);
+        if(prefix_len == (unsigned int) -1)
+          {
+            fprintf(stderr, "Error: invalid character in prefix.\n\n");
+            exit(EXIT_FAILURE);
+          }
+        prefix = (wchar_t *) calloc(prefix_len + 1, sizeof(wchar_t));
+        if(prefix == NULL)
+          {
+            fprintf(stderr, "Error: memory allocation failed.\n\n");
+            exit(EXIT_FAILURE);
+          }
+        mbstowcs(prefix, optarg, prefix_len + 1);
         break;
 
       case 'c':
@@ -394,7 +722,28 @@ int main(int argc, char **argv)
         break;
 
       case 'e':
-        suffix = optarg;
+        suffix_len = mbstowcs(NULL, optarg, 0);
+        if(suffix_len == (unsigned int) -1)
+          {
+            fprintf(stderr, "Error: invalid character in suffix.\n\n");
+            exit(EXIT_FAILURE);
+          }
+        suffix = (wchar_t *) calloc(suffix_len + 1, sizeof(wchar_t));
+        if(suffix == NULL)
+          {
+            fprintf(stderr, "Error: memory allocation failed.\n\n");
+            exit(EXIT_FAILURE);
+          }
+        mbstowcs(suffix, optarg, suffix_len + 1);
+        break;
+
+      case 'f':
+        dictionary = fopen(optarg, "r");
+        if(dictionary == NULL)
+          {
+            fprintf(stderr, "Error: can't open dictionary file.\n\n");
+            exit(EXIT_FAILURE);
+          }
         break;
 
       case 'h':
@@ -422,8 +771,29 @@ int main(int argc, char **argv)
         no_error = 1;
         break;
 
+      case 'p':
+        print = (long unsigned int) atol(optarg);
+        break;
+
       case 's':
-        charset = optarg;
+        charset_len = mbstowcs(NULL, optarg, 0);
+        if(charset_len == 0)
+          {
+            fprintf(stderr, "Error: charset must have at least one character.\n\n");
+            exit(EXIT_FAILURE);
+          }
+        if(charset_len == (unsigned int) -1)
+          {
+            fprintf(stderr, "Error: invalid character in charset.\n\n");
+            exit(EXIT_FAILURE);
+          }
+        charset = (wchar_t *) calloc(charset_len + 1, sizeof(wchar_t));
+        if(charset == NULL)
+          {
+            fprintf(stderr, "Error: memory allocation failed.\n\n");
+            exit(EXIT_FAILURE);
+          }
+        mbstowcs(charset, optarg, charset_len + 1);
         break;
 
       case 't':
@@ -441,10 +811,12 @@ int main(int argc, char **argv)
           case 'c':
           case 'd':
           case 'e':
+          case 'f':
           case 'L':
           case 'l':
           case 'M':
           case 'm':
+          case 'p':
           case 's':
           case 't':
             fprintf(stderr, "Error: missing argument for option: '-%c'.\n\n", optopt);
@@ -468,46 +840,87 @@ int main(int argc, char **argv)
   filename = argv[optind];
 
   /* Check variables */
-  if(cipher == NULL)
-    cipher = EVP_aes_256_cbc();
-  if(digest == NULL)
-    digest = EVP_md5();
-  if(prefix == NULL)
-    prefix = "";
-  prefix_len = strlen(prefix);
-  if(suffix == NULL)
-    suffix = "";
-  suffix_len = strlen(suffix);
-  if(charset && binary)
+  if(dictionary != NULL)
     {
-      fprintf(stderr, "Error: options -B and -s can't be both set.\n\n");
-      exit(EXIT_FAILURE);
+      fprintf(stderr, "Warning: using dictionary mode, ignoring options -b, -e, -l, -m and -s.\n\n");
     }
-  else if(binary)
-    charset = binary_charset;
-  else if(charset == NULL)
-    charset = default_charset;
-  charset_len = strlen(charset);
-  if(charset_len == 0)
+  else
     {
-      fprintf(stderr, "Error: charset must have at least one character.\n\n");
-      exit(EXIT_FAILURE);
+      if(cipher == NULL)
+        cipher = EVP_aes_256_cbc();
+      if(digest == NULL)
+        digest = EVP_md5();
+      if(prefix == NULL)
+        {
+          prefix_len = mbstowcs(NULL, "", 0);
+          prefix = (wchar_t *) calloc(prefix_len + 1, sizeof(wchar_t));
+          if(prefix == NULL)
+            {
+              fprintf(stderr, "Error: memory allocation failed.\n\n");
+              exit(EXIT_FAILURE);
+            }
+          mbstowcs(prefix, "", prefix_len + 1);
+        }
+      if(suffix == NULL)
+        {
+          suffix_len = mbstowcs(NULL, "", 0);
+          suffix = (wchar_t *) calloc(suffix_len + 1, sizeof(wchar_t));
+          if(suffix == NULL)
+            {
+              fprintf(stderr, "Error: memory allocation failed.\n\n");
+              exit(EXIT_FAILURE);
+            }
+          mbstowcs(suffix, "", suffix_len + 1);
+        }
+      if(charset && binary)
+        {
+          fprintf(stderr, "Error: options -B and -s can't be both set.\n\n");
+          exit(EXIT_FAILURE);
+        }
+      else if(binary)
+        {
+          charset_len = strlen(binary_charset);
+          prefix_len = wcstombs(NULL, prefix, 0);
+          suffix_len = wcstombs(NULL, suffix, 0);
+        }
+      else if(charset == NULL)
+        {
+          charset_len = mbstowcs(NULL, default_charset, 0);
+          charset = (wchar_t *) calloc(charset_len + 1, sizeof(wchar_t));
+          if(charset == NULL)
+            {
+              fprintf(stderr, "Error: memory allocation failed.\n\n");
+              exit(EXIT_FAILURE);
+            }
+          mbstowcs(charset, default_charset, charset_len + 1);
+        }
+      if(charset_len == 0)
+        {
+          fprintf(stderr, "Error: charset must have at least one character.\n\n");
+          exit(EXIT_FAILURE);
+        }
+      if(nb_threads > charset_len)
+        {
+          fprintf(stderr, "Warning: number of threads (%u) bigger than character set length (%u). Only using %u threads.\n\n", nb_threads, charset_len, charset_len);
+          nb_threads = charset_len;
+        }
+      if(min_len < prefix_len + suffix_len + 1)
+        {
+          fprintf(stderr, "Warning: minimum length (%u) isn't bigger than the length of specified password characters (%u). Setting minimum length to %u.\n\n", min_len, prefix_len + suffix_len, prefix_len + suffix_len + 1);
+          min_len = prefix_len + suffix_len + 1;
+        }
+      if(max_len < min_len)
+        {
+          fprintf(stderr, "Warning: maximum length (%u) is smaller than minimum length (%u). Setting maximum length to %u.\n\n", max_len, min_len, min_len);
+          max_len = min_len;
+        }
+      if(binary && print)
+        {
+          fprintf(stderr, "Warning: option -p in not available in binary mode.\n\n");
+        }
     }
-  if(nb_threads > charset_len)
-    {
-      fprintf(stderr, "Warning: number of threads (%u) bigger than character set length (%u). Only using %u threads.\n\n", nb_threads, charset_len, charset_len);
-      nb_threads = charset_len;
-    }
-  if(min_len < prefix_len + suffix_len + 1)
-    {
-      fprintf(stderr, "Warning: minimum length (%u) isn't bigger than the length of specified password characters (%u). Setting minimum length to %u.\n\n", min_len, prefix_len + suffix_len, prefix_len + suffix_len + 1);
-      min_len = prefix_len + suffix_len + 1;
-    }
-  if(max_len < min_len)
-    {
-      fprintf(stderr, "Warning: maximum length (%u) is smaller than minimum length (%u). Setting maximum length to %u.\n\n", max_len, min_len, min_len);
-      max_len = min_len;
-    }
+
+  signal(SIGUSR1, handle_signal);
 
   /* Check header */
   fd = open(filename, O_RDONLY);
@@ -558,32 +971,38 @@ int main(int argc, char **argv)
   close(fd);
 
   pthread_mutex_init(&found_password_lock, NULL);
+  pthread_mutex_init(&dictionary_lock, NULL);
   
   /* Start decryption threads */
   decryption_threads = (pthread_t *) malloc(nb_threads * sizeof(pthread_t));
-  indexes = (unsigned int **) malloc(nb_threads * sizeof(unsigned int *));
-  if((decryption_threads == NULL) || (indexes == NULL))
+  thread_locals = (struct decryption_func_locals *) calloc(nb_threads, sizeof(struct decryption_func_locals));
+  if((decryption_threads == NULL) || (thread_locals == NULL))
     {
       fprintf(stderr, "Error: memory allocation failed.\n\n");
       exit(EXIT_FAILURE);
     }
   for(i = 0; i < nb_threads; i++)
     {
-      indexes[i] = (unsigned int *) malloc(2 * sizeof(unsigned int));
-      if(indexes[i] == NULL)
+      if(dictionary == NULL)
         {
-          fprintf(stderr, "Error: memory allocation failed.\n\n");
-          exit(EXIT_FAILURE);
+          thread_locals[i].index_start = i * (charset_len / nb_threads);
+          if(i == nb_threads - 1)
+            thread_locals[i].index_end = charset_len - 1;
+          else
+            thread_locals[i].index_end = (i + 1) * (charset_len / nb_threads) - 1;
+          if(binary == NULL)
+            ret = pthread_create(&decryption_threads[i], NULL, &decryption_func, &thread_locals[i]);
+          else
+            ret = pthread_create(&decryption_threads[i], NULL, &decryption_func_binary, &thread_locals[i]);
         }
-      indexes[i][0] = i * (charset_len / nb_threads);
-      if(i == nb_threads - 1)
-        indexes[i][1] = charset_len - 1;
       else
-        indexes[i][1] = (i + 1) * (charset_len / nb_threads) - 1;
-      ret = pthread_create(&decryption_threads[i], NULL, &decryption_func, indexes[i]);
+        {
+          thread_locals[i].index_start = i;
+          ret = pthread_create(&decryption_threads[i], NULL, &decryption_func_dictionary, &thread_locals[i]);
+        }
       if(ret != 0)
         {
-          perror("decryption thread");
+          perror("Error: decryption thread");
           exit(EXIT_FAILURE);
         }
     }
@@ -591,11 +1010,17 @@ int main(int argc, char **argv)
   for(i = 0; i < nb_threads; i++)
     {
       pthread_join(decryption_threads[i], NULL);
-      free(indexes[i]);
     }
-  free(indexes);
+  if(found_password == 0)
+    {
+      handle_signal(SIGUSR1); /* Print some stats */
+      fprintf(stderr, "Password not found\n");
+    }
+
+  free(thread_locals);
   free(decryption_threads);
   pthread_mutex_destroy(&found_password_lock);
+  pthread_mutex_destroy(&dictionary_lock);
   free(data);
   EVP_cleanup();
 

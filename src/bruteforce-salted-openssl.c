@@ -667,6 +667,7 @@ int main(int argc, char **argv)
   int fd, i, ret, c;
   struct stat file_stats;
 
+  setlocale(LC_ALL, "");
   OpenSSL_add_all_algorithms();
 
   /* Get options and parameters */

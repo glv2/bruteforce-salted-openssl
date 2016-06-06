@@ -221,7 +221,7 @@ void * decryption_func(void *arg)
                 {
                   pthread_mutex_lock(&found_password_lock);
                   count_print++;
-                  if(count_print > print)
+                  if(count_print >= print)
                     {
                       fprintf(stderr, "Just tested password: %ls\n", password);
                       count_print = 0;
@@ -517,7 +517,7 @@ void * decryption_func_dictionary(void *arg)
         {
           pthread_mutex_lock(&found_password_lock);
           count_print++;
-          if(count_print > print)
+          if(count_print >= print)
             {
               fprintf(stderr, "Just tested password: %s\n", pwd);
               count_print = 0;

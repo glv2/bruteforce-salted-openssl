@@ -232,7 +232,7 @@ void * decryption_func(void *arg)
                 {
                   pthread_mutex_lock(&found_password_lock);
                   count_limit++;
-                  if(count_limit > limit)
+                  if(count_limit >= limit)
                     {
                       fprintf(stderr, "Maximum number of passphrases tested, aborting.\n");
                       stop = 1;
@@ -363,7 +363,7 @@ void * decryption_func_binary(void *arg)
                 {
                   pthread_mutex_lock(&found_password_lock);
                   count_limit++;
-                  if(count_limit > limit)
+                  if(count_limit >= limit)
                     {
                       fprintf(stderr, "Maximum number of passwords tested, aborting.\n");
                       stop = 1;
@@ -528,7 +528,7 @@ void * decryption_func_dictionary(void *arg)
         {
           pthread_mutex_lock(&found_password_lock);
           count_limit++;
-          if(count_limit > limit)
+          if(count_limit >= limit)
             {
               fprintf(stderr, "Maximum number of passphrases tested, aborting.\n");
               stop = 1;
@@ -840,16 +840,16 @@ int main(int argc, char **argv)
   filename = argv[optind];
 
   /* Check variables */
+  if(cipher == NULL)
+    cipher = EVP_aes_256_cbc();
+  if(digest == NULL)
+    digest = EVP_md5();
   if(dictionary != NULL)
     {
       fprintf(stderr, "Warning: using dictionary mode, ignoring options -b, -e, -l, -m and -s.\n\n");
     }
   else
     {
-      if(cipher == NULL)
-        cipher = EVP_aes_256_cbc();
-      if(digest == NULL)
-        digest = EVP_md5();
       if(prefix == NULL)
         {
           prefix_len = mbstowcs(NULL, "", 0);

@@ -114,7 +114,7 @@ int valid_data(unsigned char *data, unsigned int len)
   for(i = 0; i < len; i++)
     {
       c = data[i];
-      if(!isprint(c))
+      if(!isprint(c) && !isspace(c))
       {
         bad++;
         if(bad > trigger)

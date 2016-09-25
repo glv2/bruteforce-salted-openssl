@@ -136,7 +136,7 @@ void * decryption_func(void *arg)
   unsigned int password_len, pwd_len, index_start, index_end, len, out_len1, out_len2, i, j, k;
   int ret, found;
   unsigned int *tab;
-  EVP_CIPHER_CTX ctx;
+  EVP_CIPHER_CTX *ctx;
 
   dfargs = (struct decryption_func_locals *) arg;
   index_start = dfargs->index_start;
@@ -144,7 +144,8 @@ void * decryption_func(void *arg)
   key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
   iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
   out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
-  if((key == NULL) || (iv == NULL) || (out == NULL))
+  ctx = EVP_CIPHER_CTX_new();
+  if((key == NULL) || (iv == NULL) || (out == NULL) || (ctx == NULL))
     {
       fprintf(stderr, "Error: memory allocation failed.\n\n");
       exit(EXIT_FAILURE);
@@ -188,9 +189,9 @@ void * decryption_func(void *arg)
 
               /* Decrypt data with password */
               EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
-              EVP_DecryptInit(&ctx, cipher, key, iv);
-              EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
-              ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
+              EVP_DecryptInit(ctx, cipher, key, iv);
+              EVP_DecryptUpdate(ctx, out, &out_len1, data, data_len);
+              ret = EVP_DecryptFinal(ctx, out + out_len1, &out_len2);
               dfargs->counter++;
 
               if(no_error || (ret == 1))
@@ -215,7 +216,7 @@ void * decryption_func(void *arg)
                   pthread_mutex_unlock(&found_password_lock);
                 }
 
-              EVP_CIPHER_CTX_cleanup(&ctx);
+              EVP_CIPHER_CTX_cleanup(ctx);
 
               if(print > 0)
                 {
@@ -261,6 +262,7 @@ void * decryption_func(void *arg)
         }
     }
 
+  EVP_CIPHER_CTX_free(ctx);
   free(out);
   free(iv);
   free(key);
@@ -275,7 +277,7 @@ void * decryption_func_binary(void *arg)
   unsigned int pwd_len, index_start, index_end, len, out_len1, out_len2, i, j, k;
   int ret, found;
   unsigned int *tab;
-  EVP_CIPHER_CTX ctx;
+  EVP_CIPHER_CTX *ctx;
   int fd;
   char outfile[128];
 
@@ -285,7 +287,8 @@ void * decryption_func_binary(void *arg)
   key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
   iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
   out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
-  if((key == NULL) || (iv == NULL) || (out == NULL))
+  ctx = EVP_CIPHER_CTX_new();
+  if((key == NULL) || (iv == NULL) || (out == NULL) || (ctx == NULL))
     {
       fprintf(stderr, "Error: memory allocation failed.\n\n");
       exit(EXIT_FAILURE);
@@ -321,9 +324,9 @@ void * decryption_func_binary(void *arg)
 
               /* Decrypt data with password */
               EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
-              EVP_DecryptInit(&ctx, cipher, key, iv);
-              EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
-              ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
+              EVP_DecryptInit(ctx, cipher, key, iv);
+              EVP_DecryptUpdate(ctx, out, &out_len1, data, data_len);
+              ret = EVP_DecryptFinal(ctx, out + out_len1, &out_len2);
               dfargs->counter++;
 
               if(no_error || (ret == 1))
@@ -357,7 +360,7 @@ void * decryption_func_binary(void *arg)
                   pthread_mutex_unlock(&found_password_lock);
                 }
 
-              EVP_CIPHER_CTX_cleanup(&ctx);
+              EVP_CIPHER_CTX_cleanup(ctx);
 
               if(limit > 0)
                 {
@@ -390,6 +393,7 @@ void * decryption_func_binary(void *arg)
         }
     }
 
+  EVP_CIPHER_CTX_free(ctx);
   free(out);
   free(iv);
   free(key);
@@ -464,14 +468,15 @@ void * decryption_func_dictionary(void *arg)
   unsigned char *pwd, *key, *iv, *out;
   unsigned int pwd_len, len, out_len1, out_len2;
   int ret, found;
-  EVP_CIPHER_CTX ctx;
+  EVP_CIPHER_CTX *ctx;
 
   dfargs = (struct decryption_func_locals *) arg;
 
   key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
   iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
   out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
-  if((key == NULL) || (iv == NULL) || (out == NULL))
+  ctx = EVP_CIPHER_CTX_new();
+  if((key == NULL) || (iv == NULL) || (out == NULL) || (ctx == NULL))
     {
       fprintf(stderr, "Error: memory allocation failed.\n\n");
       exit(EXIT_FAILURE);
@@ -485,9 +490,9 @@ void * decryption_func_dictionary(void *arg)
 
       /* Decrypt data with password */
       EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
-      EVP_DecryptInit(&ctx, cipher, key, iv);
-      EVP_DecryptUpdate(&ctx, out, &out_len1, data, data_len);
-      ret = EVP_DecryptFinal(&ctx, out + out_len1, &out_len2);
+      EVP_DecryptInit(ctx, cipher, key, iv);
+      EVP_DecryptUpdate(ctx, out, &out_len1, data, data_len);
+      ret = EVP_DecryptFinal(ctx, out + out_len1, &out_len2);
       dfargs->counter++;
       if(no_error || (ret == 1))
         {
@@ -511,7 +516,7 @@ void * decryption_func_dictionary(void *arg)
           pthread_mutex_unlock(&found_password_lock);
         }
 
-      EVP_CIPHER_CTX_cleanup(&ctx);
+      EVP_CIPHER_CTX_cleanup(ctx);
 
       if(print > 0)
         {
@@ -540,6 +545,7 @@ void * decryption_func_dictionary(void *arg)
     }
   while(stop == 0);
 
+  EVP_CIPHER_CTX_free(ctx);
   free(out);
   free(iv);
   free(key);

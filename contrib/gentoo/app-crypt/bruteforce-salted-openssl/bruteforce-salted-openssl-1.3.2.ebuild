@@ -25,6 +25,6 @@ src_configure() {
 }
 
 src_install() {
-	dobin "${PN}"
+	einstall
 	dodoc AUTHORS ChangeLog COPYING NEWS README
 }

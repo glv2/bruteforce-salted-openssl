@@ -31,6 +31,6 @@ the covered work.
 #ifndef VERSION_H
 #define VERSION_H 1
 
-#define VERSION_NUMBER "1.3.1"
+#define VERSION_NUMBER "1.3.2"
 
 #endif

@@ -1,5 +1,5 @@
 dnl Process this file with autoconf
-AC_INIT(bruteforce_salted_openssl, 1.3.1)
+AC_INIT(bruteforce_salted_openssl, 1.3.2)
 AM_INIT_AUTOMAKE
 AC_CONFIG_SRCDIR(src/bruteforce-salted-openssl.c)
 

@@ -40,10 +40,14 @@ the covered work.
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 #include <wchar.h>
 
 #include "version.h"
+
+
+#define LAST_PASS_MAX_SHOWN_LENGTH 256
 
 unsigned char *default_charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -75,6 +79,8 @@ pthread_mutex_t found_password_lock, dictionary_lock;
 char stop = 0, only_one_password = 0, found_password = 0, no_error = 0;
 unsigned int nb_threads = 1;
 unsigned long long int limit = 0, print = 0, count_limit = 0, count_print = 0;
+unsigned char last_pass[LAST_PASS_MAX_SHOWN_LENGTH];
+time_t start_time;
 struct decryption_func_locals
 {
   unsigned int index_start;
@@ -94,6 +100,9 @@ void handle_signal(int signo)
   unsigned int l_full = max_len - suffix_len - prefix_len;
   unsigned int l_skip = min_len - suffix_len - prefix_len;
   double space = 0;
+  time_t current_time;
+
+  current_time = time(NULL);
 
   if(dictionary == NULL)
     for(l = l_skip; l <= l_full; l++)
@@ -103,6 +112,8 @@ void handle_signal(int signo)
     total_ops += thread_locals[i].counter;
 
   fprintf(stderr, "Tried passwords: %llu\n", total_ops);
+  fprintf(stderr, "Tried passwords per second: %lf\n", (double) total_ops / (current_time - start_time));
+  fprintf(stderr, "Last tried password: %s\n", last_pass);
   if(dictionary == NULL)
     fprintf(stderr, "Total space searched: %lf%%\n", (total_ops / space) * 100);
 }
@@ -197,6 +208,7 @@ void * decryption_func(void *arg)
                   exit(EXIT_FAILURE);
                 }
               wcstombs(pwd, password, pwd_len + 1);
+              snprintf(last_pass, LAST_PASS_MAX_SHOWN_LENGTH, "%s", pwd);
 
               /* Decrypt data with password */
               EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
@@ -498,6 +510,7 @@ void * decryption_func_dictionary(void *arg)
       ret = read_dictionary_line(&pwd, &pwd_len);
       if(ret == 0)
         break;
+      snprintf(last_pass, LAST_PASS_MAX_SHOWN_LENGTH, "%s", pwd);
 
       /* Decrypt data with password */
       EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
@@ -938,6 +951,7 @@ int main(int argc, char **argv)
         }
     }
 
+  last_pass[0] = '\0';
   signal(SIGUSR1, handle_signal);
 
   /* Check header */
@@ -999,6 +1013,7 @@ int main(int argc, char **argv)
       fprintf(stderr, "Error: memory allocation failed.\n\n");
       exit(EXIT_FAILURE);
     }
+  start_time = time(NULL);
   for(i = 0; i < nb_threads; i++)
     {
       if(dictionary == NULL)

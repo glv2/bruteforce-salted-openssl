@@ -1,3 +1,16 @@
+Compiling
+=========
+Contrary to the below narrative, './configure && make && make install' is not working.
+
+In order to build the executable, install the OpenSSL Library:
+
+apt-get install libssl-dev
+
+The compile the binary:
+
+gcc bruteforce-salted-openssl.c -o bruteforce-salted-openssl -lm -I/usr/local/ssl/include/openssl
+
+
 Installation Instructions
 *************************
 

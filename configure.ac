@@ -1,5 +1,4 @@
-dnl Process this file with autoconf
-AC_INIT(bruteforce_salted_openssl, 1.3.3)
+AC_INIT(bruteforce_salted_openssl, 1.4.0)
 AM_INIT_AUTOMAKE
 AC_CONFIG_SRCDIR(src/bruteforce-salted-openssl.c)
 
@@ -8,18 +7,19 @@ AC_PROG_CC
 AC_PROG_INSTALL
 
 dnl Check for standard headers
-AC_CHECK_HEADERS([ctype.h fcntl.h locale.h math.h stdio.h stdlib.h string.h sys/stat.h sys/types.h time.h unistd.h wchar.h])
+AC_CHECK_HEADERS([ctype.h fcntl.h locale.h math.h stdio.h stdlib.h string.h sys/stat.h sys/time.h sys/types.h time.h unistd.h wchar.h])
 
 dnl Check for functions
 AC_CHECK_FUNCS([calloc malloc realloc free])
-AC_CHECK_FUNCS([perror printf fprintf])
+AC_CHECK_FUNCS([perror printf fprintf snprintf])
+AC_CHECK_FUNCS([fopen fgetc])
 AC_CHECK_FUNCS([atoi atol isprint isspace])
 AC_CHECK_FUNCS([memset strcasecmp strlen strncmp strncpy])
 AC_CHECK_FUNCS([setlocale mbstowcs wcsncpy wcstombs])
 AC_CHECK_FUNCS([open fstat read close])
 AC_CHECK_FUNCS([getopt])
 AC_CHECK_FUNCS([signal])
-AC_CHECK_FUNCS([time])
+AC_CHECK_FUNCS([localtime setitimer strftime time])
 
 dnl Check for libraries
 AC_CHECK_LIB(m, pow, [], AC_MSG_ERROR([math library required]))

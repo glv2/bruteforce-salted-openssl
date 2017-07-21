@@ -68,6 +68,7 @@ To install it on your system, use the command:
 
 ## Available options
 
+```
   -1           Stop the program after finding the first password candidate.
 
   -a           List the available cipher and digest algorithms.
@@ -117,6 +118,7 @@ To install it on your system, use the command:
 
   -w <file>    Restore the state of a previous session if the file exists,
                then write the state to the file regularly (~ every minute).
+```
 
 
 ## Limitations

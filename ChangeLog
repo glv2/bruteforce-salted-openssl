@@ -1,4 +1,4 @@
-2017-07-19 Guillaume LE VAILLANT <glv@posteo.net>
+2017-07-21 Guillaume LE VAILLANT <glv@posteo.net>
 	Version 1.4.0
 	Add option to print progress info regularly.
 	Add option to restore/save state from/to a file.

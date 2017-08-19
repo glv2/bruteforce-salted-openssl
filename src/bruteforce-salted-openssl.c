@@ -78,7 +78,7 @@ FILE *dictionary = NULL;
 const EVP_CIPHER *cipher = NULL;
 const EVP_MD *digest = NULL;
 pthread_mutex_t found_password_lock, get_password_lock;
-char stop = 0, only_one_password = 0, found_password = 0, no_error = 0;
+char stop = 0, only_one_password = 0, found_password = 0, no_error = 0, no_salt = 0;
 unsigned int nb_threads = 1;
 unsigned long long int limit = 0, count_limit = 0;
 unsigned char last_pass[LAST_PASS_MAX_SHOWN_LENGTH];
@@ -415,7 +415,10 @@ void * decryption_func(void *arg)
       break;
 
     /* Decrypt data with password */
-    EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
+    if(no_salt)
+      EVP_BytesToKey(cipher, digest, NULL, pwd, pwd_len, 1, key, iv);
+    else
+      EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
     EVP_DecryptInit(ctx, cipher, key, iv);
     EVP_DecryptUpdate(ctx, out, &out_len1, data, data_len);
     ret = EVP_DecryptFinal(ctx, out + out_len1, &out_len2);
@@ -766,6 +769,7 @@ void usage(char *progname)
   fprintf(stderr, "  -m <length>  Maximum password length (beginning and end included).\n");
   fprintf(stderr, "                 default: 8\n\n");
   fprintf(stderr, "  -N           Ignore decryption errors (similar to openssl -nopad).\n\n");
+  fprintf(stderr, "  -n           Ignore salt (similar to openssl -nosalt).\n\n");
   fprintf(stderr, "  -s <string>  Password character set.\n");
   fprintf(stderr, "               default: \"0123456789ABCDEFGHIJKLMNOPQRSTU\n");
   fprintf(stderr, "                         VWXYZabcdefghijklmnopqrstuvwxyz\"\n\n");
@@ -801,7 +805,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1aB:b:c:d:e:f:hL:l:M:m:Ns:t:v:w:")) != -1)
+  while((c = getopt(argc, argv, "1aB:b:c:d:e:f:hL:l:M:m:Nns:t:v:w:")) != -1)
     switch(c)
     {
     case '1':
@@ -899,6 +903,10 @@ int main(int argc, char **argv)
 
     case 'N':
       no_error = 1;
+      break;
+
+    case 'n':
+      no_salt = 1;
       break;
 
     case 's':
@@ -1055,27 +1063,33 @@ int main(int argc, char **argv)
     perror("open file");
     exit(EXIT_FAILURE);
   }
-  memset(salt, 0, sizeof(salt));
-  ret = read(fd, salt, 8);
-  if(strncmp(salt, "Salted__", 8) != 0)
+  if(no_salt == 0)
   {
-    close(fd);
-    fprintf(stderr, "Error: %s is not a salted openssl file.\n\n", filename);
-    exit(EXIT_FAILURE);
-  }
+    memset(salt, 0, sizeof(salt));
+    ret = read(fd, salt, 8);
+    if(strncmp(salt, "Salted__", 8) != 0)
+    {
+      close(fd);
+      fprintf(stderr, "Error: %s is not a salted openssl file.\n\n", filename);
+      exit(EXIT_FAILURE);
+    }
 
-  /* Read salt */
-  ret = read(fd, salt, 8);
-  if(ret != 8)
-  {
-    close(fd);
-    fprintf(stderr, "Error: could not read salt.\n\n");
-    exit(EXIT_FAILURE);
+    /* Read salt */
+    ret = read(fd, salt, 8);
+    if(ret != 8)
+    {
+      close(fd);
+      fprintf(stderr, "Error: could not read salt.\n\n");
+      exit(EXIT_FAILURE);
+    }
   }
 
   /* Read encrypted data */
   ret = fstat(fd, &file_stats);
-  data_len = file_stats.st_size - 16;
+  if(no_salt)
+    data_len = file_stats.st_size;
+  else
+    data_len = file_stats.st_size - 16;
   data = (char *) malloc(data_len);
   if(data == NULL)
   {

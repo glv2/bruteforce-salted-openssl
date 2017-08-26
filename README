@@ -177,11 +177,3 @@ If the program finds a candidate password 'pwd', you can decrypt the data
 using the 'openssl' command:
 
     openssl enc -d -aes256 -salt -in encrypted.file -out decrypted.file -k pwd
-
-
-## Donations
-
-If you find this program useful and want to make a donation, you can send coins
-to one of the following addresses:
- - Peercoin: PWFNV1Cvq7nQBRyRueuYzwmDNXUGpgNkBC
- - Bitcoin: 1F1ZfM7XtggHsShK4vwuy9zv98a9wt7nXx

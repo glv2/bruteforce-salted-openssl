@@ -25,7 +25,7 @@
 
 2015-03-11 Guillaume LE VAILLANT <guillaume.le.vaillant@openmailbox.org>
 	Version 1.2
-	Add the options developped by Simon WOOD (binary passwords,
+	Add the options developed by Simon WOOD (binary passwords,
 	magic string, limit number of tests).
 
 2014-07-04 Guillaume LE VAILLANT <guillaume.le.vaillant@openmailbox.org>

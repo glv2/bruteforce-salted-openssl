@@ -534,9 +534,11 @@ void restore_state()
 
   if(state == NULL)
   {
-    fprintf(stderr, "Warning: can't open state file, state not restored.\n\n");
+    fprintf(stderr, "Warning: can't open state file, state not restored, a new file will be created.\n\n");
     return;
   }
+
+  fprintf(stderr, "Warning: restoring state, ignoring options -B, -b, -e, -f, -l, -m and -s.\n\n");
 
   if(dictionary != NULL)
     fclose(dictionary);
@@ -1140,8 +1142,6 @@ int main(int argc, char **argv)
 
   if(state_file != NULL)
   {
-    fprintf(stderr, "Warning: restoring state, ignoring options -B, -b, -e, -f, -l, -m and -s.\n\n");
-
     restore_state();
 
     signal(SIGVTALRM, save_state);

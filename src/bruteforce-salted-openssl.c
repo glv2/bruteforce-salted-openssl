@@ -2,7 +2,7 @@
 This file is part of bruteforce-salted-openssl, a program trying to
 bruteforce a file encrypted (with salt) by openssl.
 
-Copyright 2014-2017 Guillaume LE VAILLANT
+Copyright 2014-2018 Guillaume LE VAILLANT
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1170,7 +1170,10 @@ int main(int argc, char **argv)
   if(found_password == 0)
   {
     handle_signal(SIGUSR1); /* Print some stats */
-    fprintf(stderr, "Password not found\n");
+    fprintf(stderr, "Password not found.\n");
+    fprintf(stderr, "The file might have been encrypted with a different cipher or/and a\n");
+    fprintf(stderr, "different digest (e.g. OpenSSL 1.0.x uses the MD5 digest by default\n");
+    fprintf(stderr, "but OpenSSL 1.1.x uses SHA256 by default).\n");
   }
 
   free(thread_locals);

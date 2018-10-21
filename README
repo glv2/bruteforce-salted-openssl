@@ -107,6 +107,8 @@ To install it on your system, use the command:
 
   -N           Ignore decryption errors (similar to openssl -nopad).
 
+  -n           Ignore salt (similar to openssl -nosalt).
+
   -s <string>  Password character set.
                default: "0123456789ABCDEFGHIJKLMNOPQRSTU
                          VWXYZabcdefghijklmnopqrstuvwxyz"

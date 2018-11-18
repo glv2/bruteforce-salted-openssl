@@ -802,7 +802,7 @@ void usage(char *progname)
   fprintf(stderr, "               characters (at least 90%%).\n\n");
   fprintf(stderr, "  -p <n>       Preview and check the first N decrypted bytes for the magic string.\n");
   fprintf(stderr, "               If the magic string is present, try decrypting the rest of the data.\n");
-  fprintf(stderr, "                 default: 1024\n");
+  fprintf(stderr, "                 default: 1024\n\n");
   fprintf(stderr, "  -m <length>  Maximum password length (beginning and end included).\n");
   fprintf(stderr, "                 default: 8\n\n");
   fprintf(stderr, "  -N           Ignore decryption errors (similar to openssl -nopad).\n\n");

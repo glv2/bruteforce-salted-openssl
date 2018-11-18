@@ -73,7 +73,7 @@ unsigned char *binary_charset =     "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0
 unsigned char *path = NULL, *dictionary_file = NULL, *state_file = NULL;
 unsigned char *data = NULL, salt[8], *binary = NULL, *magic = NULL;
 wchar_t *charset = NULL, *prefix = NULL, *suffix = NULL;
-unsigned int charset_len, data_len = 0, min_len = 1, max_len = 8, prefix_len = 0, suffix_len = 0;
+unsigned int charset_len, data_len = 0, min_len = 1, max_len = 8, prefix_len = 0, suffix_len = 0, preview_len = 1024;
 FILE *dictionary = NULL;
 const EVP_CIPHER *cipher = NULL;
 const EVP_MD *digest = NULL;
@@ -388,8 +388,8 @@ void * decryption_func(void *arg)
 {
   struct decryption_func_locals *dfargs;
   unsigned char *pwd, *key, *iv, *out;
-  unsigned int pwd_len, len, out_len1, out_len2;
-  int ret, found;
+  unsigned int pwd_len, len, cur_out_len, total_out_len;
+  int ret, found, preview_found;
   EVP_CIPHER_CTX *ctx;
 
   dfargs = (struct decryption_func_locals *) arg;
@@ -411,7 +411,7 @@ void * decryption_func(void *arg)
       if(binary)
         ret = generate_next_binary_password(&pwd, &pwd_len);
       else
-        ret = generate_next_password(&pwd, &pwd_len);          
+        ret = generate_next_password(&pwd, &pwd_len);
     }
     else
       ret = read_dictionary_line(&pwd, &pwd_len);
@@ -423,13 +423,41 @@ void * decryption_func(void *arg)
       EVP_BytesToKey(cipher, digest, NULL, pwd, pwd_len, 1, key, iv);
     else
       EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
+
     EVP_DecryptInit(ctx, cipher, key, iv);
-    EVP_DecryptUpdate(ctx, out, &out_len1, data, data_len);
-    ret = EVP_DecryptFinal(ctx, out + out_len1, &out_len2);
+
+    preview_found = 0;
+    total_out_len = 0;
+    if(preview_len > 0)
+    {
+      /* Decrypt the first preview_len bytes and check them first. */
+      ret = EVP_DecryptUpdate(ctx, out, &cur_out_len, data, preview_len);
+      total_out_len += cur_out_len;
+
+      if(ret == 1)
+      {
+        if(magic == NULL)
+          preview_found = valid_data(out, total_out_len);
+        else
+          preview_found = !strncmp(out, magic, strlen(magic));
+      }
+    } else {
+      /* If not doing a preview decryption, pretend we found a hit so we decrypt the remaining data. */
+      preview_found = 1;
+    }
+
+    /* Don't bother checking the rest if the first preview part didn't match. */
+    if(preview_found) {
+      EVP_DecryptUpdate(ctx, out + total_out_len, &cur_out_len, data + preview_len, data_len - preview_len);
+      total_out_len += cur_out_len;
+      ret = EVP_DecryptFinal(ctx, out + total_out_len, &cur_out_len);
+      total_out_len += cur_out_len;
+    }
+
     if(no_error || (ret == 1))
     {
       if(magic == NULL)
-        found = valid_data(out, out_len1 + out_len2);
+        found = valid_data(out, total_out_len);
       else
         found = !strncmp(out, magic, strlen(magic));
     }
@@ -772,6 +800,9 @@ void usage(char *progname)
   fprintf(stderr, "               with <string>. Without this option, the decryption is considered\n");
   fprintf(stderr, "               as successful when the data contains mostly printable ASCII\n");
   fprintf(stderr, "               characters (at least 90%%).\n\n");
+  fprintf(stderr, "  -p <n>       Preview and check the first N decrypted bytes for the magic string.\n");
+  fprintf(stderr, "               If the magic string is present, try decrypting the rest of the data.\n");
+  fprintf(stderr, "                 default: 1024\n");
   fprintf(stderr, "  -m <length>  Maximum password length (beginning and end included).\n");
   fprintf(stderr, "                 default: 8\n\n");
   fprintf(stderr, "  -N           Ignore decryption errors (similar to openssl -nopad).\n\n");
@@ -780,7 +811,7 @@ void usage(char *progname)
   fprintf(stderr, "               default: \"0123456789ABCDEFGHIJKLMNOPQRSTU\n");
   fprintf(stderr, "                         VWXYZabcdefghijklmnopqrstuvwxyz\"\n\n");
   fprintf(stderr, "  -t <n>       Number of threads to use.\n");
-  fprintf(stderr, "               default: 1\n\n");
+  fprintf(stderr, "                 default: 1\n\n");
   fprintf(stderr, "  -v <n>       Print progress info every n seconds.\n");
   fprintf(stderr, "  -w <file>    Restore the state of a previous session if the file exists,\n");
   fprintf(stderr, "               then write the state to the file regularly (~ every minute).\n");
@@ -811,7 +842,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1aB:b:c:d:e:f:hL:l:M:m:Nns:t:v:w:")) != -1)
+  while((c = getopt(argc, argv, "1aB:b:c:d:e:f:hL:l:M:m:Nns:t:v:w:p:")) != -1)
     switch(c)
     {
     case '1':
@@ -950,6 +981,10 @@ int main(int argc, char **argv)
       state_file = optarg;
       break;
 
+    case 'p':
+      preview_len = (unsigned int) atoi(optarg);
+      break;
+
     default:
       usage(argv[0]);
       switch(optopt)
@@ -968,6 +1003,7 @@ int main(int argc, char **argv)
       case 't':
       case 'v':
       case 'w':
+      case 'p':
         fprintf(stderr, "Error: missing argument for option: '-%c'.\n\n", optopt);
         break;
 
@@ -1096,6 +1132,21 @@ int main(int argc, char **argv)
     data_len = file_stats.st_size;
   else
     data_len = file_stats.st_size - 16;
+
+  /* Fixing the preview length according to the magic string and input file sizes. */
+  if(preview_len)
+  {
+    if(magic != NULL) {
+      /* Adjust the preview length to decrypt _at least_ strlen(magic) bytes. */
+      /* This may shrink the preview length, but that's a good thing. */
+      preview_len = strlen(magic) + EVP_CIPHER_block_size(cipher);
+    }
+    if(data_len < preview_len) {
+      /* The file is too small, just decrypt all at once. */
+      preview_len = 0;
+    }
+  }
+
   data = (char *) malloc(data_len);
   if(data == NULL)
   {
@@ -1129,7 +1180,7 @@ int main(int argc, char **argv)
 
   pthread_mutex_init(&found_password_lock, NULL);
   pthread_mutex_init(&get_password_lock, NULL);
-  
+
   decryption_threads = (pthread_t *) malloc(nb_threads * sizeof(pthread_t));
   thread_locals = (struct decryption_func_locals *) calloc(nb_threads, sizeof(struct decryption_func_locals));
   if((decryption_threads == NULL) || (thread_locals == NULL))

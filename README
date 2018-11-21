@@ -102,6 +102,10 @@ To install it on your system, use the command:
                as successful when the data contains mostly printable ASCII
                characters (at least 90%).
 
+  -p <n>       Preview and check the first N decrypted bytes for the magic string.
+               If the magic string is present, try decrypting the rest of the data.
+                 default: 1024
+
   -m <length>  Maximum password length (beginning and end included).
                  default: 8
 

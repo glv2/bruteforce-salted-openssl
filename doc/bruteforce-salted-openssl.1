@@ -122,6 +122,12 @@ Ignore decryption errors (similar to openssl \fB-nopad\fP).
 Ignore salt (similar to openssl \fB-nosalt\fP).
 .TP
 .B
+\fB-p\fP <n>
+Preview and check the first <n> decrypted bytes for the magic string.
+If the magic string is present, try decrypting the rest of the data.
+Default: 1024.
+.TP
+.B
 \fB-s\fP <string>
 Password character set. Default value is "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 .TP

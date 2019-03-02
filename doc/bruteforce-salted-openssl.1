@@ -189,6 +189,14 @@ Print progress info every 30 seconds:
 
 .fam T
 .fi
+Try to find the password of a des3 encrypted gzip file using 8 threads:
+.PP
+.nf
+.fam C
+    $ bruteforce-salted-openssl -t 8 -v 5 -c des3 -m 9 -s "0123456789" -M "$(echo -ne '\\x1f\\x8b')" file.tar.gz.des3
+
+.fam T
+.fi
 Save/restore state between sessions:
 .PP
 .nf

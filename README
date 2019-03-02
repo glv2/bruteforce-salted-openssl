@@ -168,6 +168,11 @@ Print progress info every 30 seconds:
     bruteforce-salted-openssl -t 6 -f dictionary.txt -c aes256 -v 30 encrypted-file
 
 
+Try to find the password of a des3 encrypted gzip file using 8 threads:
+
+    bruteforce-salted-openssl -t 8 -v 5 -c des3 -m 9 -s "0123456789" -M "$(echo -ne '\x1f\x8b')" file.tar.gz.des3
+
+
 Save/restore state between sessions:
 
     bruteforce-salted-openssl -t 6 -f dictionary.txt -c aes256 -w state.txt encrypted-file

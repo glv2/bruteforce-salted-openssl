@@ -1,4 +1,4 @@
-AC_INIT(bruteforce_salted_openssl, 1.4.2)
+AC_INIT(bruteforce-salted-openssl, 1.4.2)
 AM_INIT_AUTOMAKE
 AC_CONFIG_SRCDIR(src/bruteforce-salted-openssl.c)
 

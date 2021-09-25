@@ -2,7 +2,7 @@
 This file is part of bruteforce-salted-openssl, a program trying to
 bruteforce a file encrypted (with salt) by openssl.
 
-Copyright 2014-2018 Guillaume LE VAILLANT
+Copyright 2014-2021 Guillaume LE VAILLANT
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -78,9 +78,9 @@ FILE *dictionary = NULL;
 const EVP_CIPHER *cipher = NULL;
 const EVP_MD *digest = NULL;
 pthread_mutex_t found_password_lock, get_password_lock;
-char stop = 0, only_one_password = 0, found_password = 0, no_error = 0, no_salt = 0;
+char stop = 0, only_one_password = 0, found_password = 0, no_error = 0, no_salt = 0, pbkdf2 = 0, debug = 0;
 unsigned int nb_threads = 1;
-unsigned long long int limit = 0, count_limit = 0;
+unsigned long long int limit = 0, count_limit = 0, iterations = 10000;
 unsigned char last_pass[LAST_PASS_MAX_SHOWN_LENGTH];
 time_t start_time;
 unsigned int status_interval = 0;
@@ -384,6 +384,18 @@ int read_dictionary_line(unsigned char **line, unsigned int *n)
   return(1);
 }
 
+void print_hex(unsigned char *buf, int len)
+{
+  int i;
+  int n;
+
+  for(i = 0, n = 0; i < len; i++)
+  {
+    printf("%02x",buf[i]);
+  }
+  printf("\n");
+}
+
 void * decryption_func(void *arg)
 {
   struct decryption_func_locals *dfargs;
@@ -394,8 +406,14 @@ void * decryption_func(void *arg)
 
   dfargs = (struct decryption_func_locals *) arg;
 
-  key = (unsigned char *) malloc(EVP_CIPHER_key_length(cipher));
-  iv = (unsigned char *) malloc(EVP_CIPHER_iv_length(cipher));
+  int iklen = EVP_CIPHER_key_length(cipher);
+  int ivlen = EVP_CIPHER_iv_length(cipher);
+
+  key = (unsigned char *) malloc(iklen);
+  iv = (unsigned char *) malloc(ivlen);
+
+  char *keyivpair = (unsigned char *) malloc(iklen + ivlen);
+
   out = (unsigned char *) malloc(data_len + EVP_CIPHER_block_size(cipher));
   ctx = EVP_CIPHER_CTX_new();
   if((key == NULL) || (iv == NULL) || (out == NULL) || (ctx == NULL))
@@ -420,9 +438,42 @@ void * decryption_func(void *arg)
 
     /* Decrypt data with password */
     if(no_salt)
-      EVP_BytesToKey(cipher, digest, NULL, pwd, pwd_len, 1, key, iv);
+    {
+      if(pbkdf2)
+      {
+        PKCS5_PBKDF2_HMAC(pwd, pwd_len, NULL, 0, iterations, digest, iklen + ivlen, keyivpair);
+        memcpy(key, keyivpair, iklen);
+        memcpy(iv, keyivpair + iklen, ivlen);
+      }
+      else
+      {
+        EVP_BytesToKey(cipher, digest, NULL, pwd, pwd_len, 1, key, iv);
+      }
+    }
     else
-      EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
+    {
+      if(pbkdf2)
+      {
+        PKCS5_PBKDF2_HMAC(pwd, pwd_len, salt, sizeof(salt), iterations, digest, iklen + ivlen, keyivpair);
+        memcpy(key, keyivpair, iklen);
+        memcpy(iv, keyivpair + iklen, ivlen);
+      }
+      else
+      {
+        EVP_BytesToKey(cipher, digest, salt, pwd, pwd_len, 1, key, iv);
+      }
+    }
+
+    if(debug)
+    {
+      printf("pwd: %s\n", pwd);
+      printf("salt: ");
+      print_hex(salt, sizeof(salt));
+      printf("key: ");
+      print_hex(key, 32);
+      printf("iv: ");
+      print_hex(iv, 16);
+    }
 
     EVP_DecryptInit(ctx, cipher, key, iv);
 
@@ -787,12 +838,16 @@ void usage(char *progname)
   fprintf(stderr, "                 default: \"\"\n\n");
   fprintf(stderr, "  -c <cipher>  Cipher for decryption.\n");
   fprintf(stderr, "                 default: aes-256-cbc\n\n");
+  fprintf(stderr, "  -D           Display salt, key and iv along with the tested password.\n\n");
   fprintf(stderr, "  -d <digest>  Digest for key and initialization vector generation.\n");
   fprintf(stderr, "                 default: md5\n\n");
   fprintf(stderr, "  -e <string>  End of the password.\n");
   fprintf(stderr, "                 default: \"\"\n\n");
   fprintf(stderr, "  -f <file>    Read the passwords from a file instead of generating them.\n\n");
   fprintf(stderr, "  -h           Show help and quit.\n\n");
+  fprintf(stderr, "  -i <n>       With -K, set the PBKDF2 iteration count to <n>.\n");
+  fprintf(stderr, "                 default: 10000\n\n");
+  fprintf(stderr, "  -K           Use PKCS5_PBKDF2_HMAC to derive the key.\n\n");
   fprintf(stderr, "  -L <n>       Limit the maximum number of tested passwords to <n>.\n\n");
   fprintf(stderr, "  -l <length>  Minimum password length (beginning and end included).\n");
   fprintf(stderr, "                 default: 1\n\n");
@@ -842,7 +897,7 @@ int main(int argc, char **argv)
 
   /* Get options and parameters */
   opterr = 0;
-  while((c = getopt(argc, argv, "1aB:b:c:d:e:f:hL:l:M:m:Nns:t:v:w:p:")) != -1)
+  while((c = getopt(argc, argv, "1aB:b:c:d:De:f:hi:KL:l:M:m:Nns:t:v:w:p:")) != -1)
     switch(c)
     {
     case '1':
@@ -883,6 +938,10 @@ int main(int argc, char **argv)
       }
       break;
 
+    case 'D':
+      debug = 1;
+      break;
+
     case 'd':
       digest = EVP_get_digestbyname(optarg);
       if(digest == NULL)
@@ -920,6 +979,14 @@ int main(int argc, char **argv)
     case 'h':
       usage(argv[0]);
       exit(EXIT_FAILURE);
+      break;
+
+    case 'i':
+      iterations = (long unsigned int) atol(optarg);
+      break;
+
+    case 'K':
+      pbkdf2 = 1;
       break;
 
     case 'L':

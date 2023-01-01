@@ -499,10 +499,12 @@ void * decryption_func(void *arg)
 
     /* Don't bother checking the rest if the first preview part didn't match. */
     if(preview_found) {
-      EVP_DecryptUpdate(ctx, out + total_out_len, &cur_out_len, data + preview_len, data_len - preview_len);
-      total_out_len += cur_out_len;
-      ret = EVP_DecryptFinal(ctx, out + total_out_len, &cur_out_len);
-      total_out_len += cur_out_len;
+      ret = EVP_DecryptUpdate(ctx, out + total_out_len, &cur_out_len, data + preview_len, data_len - preview_len);
+      if ( ret==1 ) {
+        total_out_len += cur_out_len;
+        ret = EVP_DecryptFinal(ctx, out + total_out_len, &cur_out_len);
+        total_out_len += cur_out_len;
+      } 
     }
 
     if(no_error || (ret == 1))
@@ -1301,5 +1303,6 @@ int main(int argc, char **argv)
   free(data);
   EVP_cleanup();
 
-  exit(EXIT_SUCCESS);
+  if ( found_password==0 ) return 1;
+  return 0;
 }

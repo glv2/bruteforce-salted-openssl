@@ -2,7 +2,7 @@
 This file is part of bruteforce-salted-openssl, a program trying to
 bruteforce a file encrypted (with salt) by openssl.
 
-Copyright 2014-2021 Guillaume LE VAILLANT
+Copyright 2014-2023 Guillaume LE VAILLANT
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -49,6 +49,7 @@ the covered work.
 
 
 #define LAST_PASS_MAX_SHOWN_LENGTH 256
+#define EXIT_NO_PASSWORD_FOUND 2
 
 unsigned char *default_charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -498,11 +499,15 @@ void * decryption_func(void *arg)
     }
 
     /* Don't bother checking the rest if the first preview part didn't match. */
-    if(preview_found) {
-      EVP_DecryptUpdate(ctx, out + total_out_len, &cur_out_len, data + preview_len, data_len - preview_len);
-      total_out_len += cur_out_len;
-      ret = EVP_DecryptFinal(ctx, out + total_out_len, &cur_out_len);
-      total_out_len += cur_out_len;
+    if(preview_found)
+    {
+      ret = EVP_DecryptUpdate(ctx, out + total_out_len, &cur_out_len, data + preview_len, data_len - preview_len);
+      if(ret == 1)
+      {
+        total_out_len += cur_out_len;
+        ret = EVP_DecryptFinal(ctx, out + total_out_len, &cur_out_len);
+        total_out_len += cur_out_len;
+      }
     }
 
     if(no_error || (ret == 1))
@@ -1301,5 +1306,12 @@ int main(int argc, char **argv)
   free(data);
   EVP_cleanup();
 
-  exit(EXIT_SUCCESS);
+  if(found_password == 0)
+  {
+    return(EXIT_NO_PASSWORD_FOUND);
+  }
+  else
+  {
+    return(EXIT_SUCCESS);
+  }
 }

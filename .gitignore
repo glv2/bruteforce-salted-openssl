@@ -13,3 +13,13 @@ Makefile
 Makefile.in
 missing
 src/*.o
+test-driver
+tests/crack-encrypted1.sh.log
+tests/crack-encrypted1.sh.trs
+tests/crack-encrypted2.sh.log
+tests/crack-encrypted2.sh.trs
+tests/crack-encrypted3.sh.log
+tests/crack-encrypted3.sh.trs
+tests/crack-encrypted4.sh.log
+tests/crack-encrypted4.sh.trs
+tests/test-suite.log

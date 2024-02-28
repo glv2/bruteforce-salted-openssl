@@ -85,7 +85,6 @@ unsigned long long int limit = 0, count_limit = 0, iterations = 10000;
 unsigned char last_pass[LAST_PASS_MAX_SHOWN_LENGTH];
 time_t start_time;
 unsigned int status_interval = 0;
-struct itimerval progress_timer, state_timer;
 struct decryption_func_locals
 {
   unsigned long long int counter;
@@ -98,7 +97,7 @@ unsigned int *tab = NULL;
  * Statistics
  */
 
-void handle_signal(int signo)
+void print_status()
 {
   unsigned long long int total_ops = 0;
   unsigned int i, l;
@@ -149,6 +148,22 @@ void handle_signal(int signo)
     }
   }
   fprintf(stderr, "\n");
+}
+
+void * status_func(void *arg)
+{
+  while(stop == 0)
+  {
+    sleep(status_interval);
+    print_status();
+  }
+
+  pthread_exit(NULL);
+}
+
+void handle_signal(int signo)
+{
+  print_status();
 }
 
 
@@ -523,7 +538,7 @@ void * decryption_func(void *arg)
     if(found)
     {
       /* We have a positive result */
-      handle_signal(SIGUSR1); /* Print some stats */
+      print_status();
       pthread_mutex_lock(&found_password_lock);
       found_password++;
       printf("Password candidate: %s\n", pwd);
@@ -564,7 +579,7 @@ void * decryption_func(void *arg)
  * Save/restore state
  */
 
-void save_state(int signo)
+void save_state()
 {
   unsigned int i;
   unsigned long long int total_ops = 0;
@@ -606,6 +621,17 @@ void save_state(int signo)
   }
 
   fclose(state);
+}
+
+void * state_func(void *arg)
+{
+  while(stop == 0)
+  {
+    sleep(60);
+    save_state();
+  }
+
+  pthread_exit(NULL);
 }
 
 void restore_state()
@@ -892,7 +918,7 @@ void list_algorithms(void)
 
 int main(int argc, char **argv)
 {
-  pthread_t *decryption_threads;
+  pthread_t *decryption_threads, status_thread, state_thread;
   char *filename;
   int fd, i, ret, c;
   struct stat file_stats;
@@ -1242,12 +1268,12 @@ int main(int argc, char **argv)
   signal(SIGUSR1, handle_signal);
   if(status_interval > 0)
   {
-    signal(SIGALRM, handle_signal);
-    progress_timer.it_value.tv_sec = status_interval;
-    progress_timer.it_value.tv_usec = 0;
-    progress_timer.it_interval.tv_sec = status_interval;
-    progress_timer.it_interval.tv_usec = 0;
-    setitimer(ITIMER_REAL, &progress_timer, NULL);
+    ret = pthread_create(&status_thread, NULL, &status_func, NULL);
+    if(ret != 0)
+    {
+      perror("Error: status thread");
+      exit(EXIT_FAILURE);
+    }
   }
 
   pthread_mutex_init(&found_password_lock, NULL);
@@ -1267,12 +1293,12 @@ int main(int argc, char **argv)
   {
     restore_state();
 
-    signal(SIGVTALRM, save_state);
-    state_timer.it_value.tv_sec = 60 * nb_threads;
-    state_timer.it_value.tv_usec = 0;
-    state_timer.it_interval.tv_sec = 60 * nb_threads;
-    state_timer.it_interval.tv_usec = 0;
-    setitimer(ITIMER_VIRTUAL, &state_timer, NULL);
+    ret = pthread_create(&state_thread, NULL, &state_func, NULL);
+    if(ret != 0)
+    {
+      perror("Error: state thread");
+      exit(EXIT_FAILURE);
+    }
   }
 
   /* Start decryption threads */
@@ -1290,9 +1316,18 @@ int main(int argc, char **argv)
   {
     pthread_join(decryption_threads[i], NULL);
   }
+  stop = 1;
+  if(state_file != NULL)
+  {
+    pthread_join(state_thread, NULL);
+  }
+  if(status_interval > 0)
+  {
+    pthread_join(status_thread, NULL);
+  }
   if(found_password == 0)
   {
-    handle_signal(SIGUSR1); /* Print some stats */
+    print_status();
     fprintf(stderr, "Password not found.\n");
     fprintf(stderr, "The file might have been encrypted with a different cipher or/and a\n");
     fprintf(stderr, "different digest (e.g. OpenSSL 1.0.x uses the MD5 digest by default\n");

@@ -2,7 +2,7 @@
 This file is part of bruteforce-salted-openssl, a program trying to
 bruteforce a file encrypted (with salt) by openssl.
 
-Copyright 2014-2023 Guillaume LE VAILLANT
+Copyright 2014-2024 Guillaume LE VAILLANT
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1223,6 +1223,7 @@ int main(int argc, char **argv)
       exit(EXIT_FAILURE);
     }
   }
+  path = filename;
 
   /* Read encrypted data */
   ret = fstat(fd, &file_stats);

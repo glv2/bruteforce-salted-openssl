@@ -889,7 +889,7 @@ void usage(char *progname)
   fprintf(stderr, "                 default: aes-256-cbc\n\n");
   fprintf(stderr, "  -D           Display salt, key and iv along with the tested password.\n\n");
   fprintf(stderr, "  -d <digest>  Digest for key and initialization vector generation.\n");
-  fprintf(stderr, "                 default: md5\n\n");
+  fprintf(stderr, "                 default: sha256\n\n");
   fprintf(stderr, "  -e <string>  End of the password.\n");
   fprintf(stderr, "                 default: \"\"\n\n");
   fprintf(stderr, "  -f <file>    Read the passwords from a file instead of generating them.\n\n");
@@ -1144,7 +1144,7 @@ int main(int argc, char **argv)
   if(cipher == NULL)
     cipher = EVP_aes_256_cbc();
   if(digest == NULL)
-    digest = EVP_md5();
+    digest = EVP_sha256();
   if(dictionary != NULL)
   {
     fprintf(stderr, "Warning: using dictionary mode, ignoring options -b, -e, -l, -m and -s.\n\n");

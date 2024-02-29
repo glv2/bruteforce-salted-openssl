@@ -88,7 +88,7 @@ To install it on your system, use the command:
                  default: aes-256-cbc
 
   -d <digest>  Digest for key and initialization vector generation.
-                 default: md5
+                 default: sha256
 
   -e <string>  End of the password.
                  default: ""

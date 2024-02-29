@@ -87,6 +87,8 @@ To install it on your system, use the command:
   -c <cipher>  Cipher for decryption.
                  default: aes-256-cbc
 
+  -D           Display salt, key and iv along with the tested password.
+
   -d <digest>  Digest for key and initialization vector generation.
                  default: sha256
 
@@ -96,6 +98,11 @@ To install it on your system, use the command:
   -f <file>    Read the passwords from a file instead of generating them.
 
   -h           Show help and quit.
+
+  -i <n>       With -K, set the PBKDF2 iteration count to <n>.
+                 default: 10000
+
+  -K           Use PKCS5_PBKDF2_HMAC to derive the key.
 
   -L <n>       Limit the maximum number of tested passwords to <n>.
 

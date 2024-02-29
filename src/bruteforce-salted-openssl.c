@@ -904,13 +904,13 @@ void usage(char *progname)
   fprintf(stderr, "               with <string>. Without this option, the decryption is considered\n");
   fprintf(stderr, "               as successful when the data contains mostly printable ASCII\n");
   fprintf(stderr, "               characters (at least 90%%).\n\n");
-  fprintf(stderr, "  -p <n>       Preview and check the first N decrypted bytes for the magic string.\n");
-  fprintf(stderr, "               If the magic string is present, try decrypting the rest of the data.\n");
-  fprintf(stderr, "                 default: 1024\n\n");
   fprintf(stderr, "  -m <length>  Maximum password length (beginning and end included).\n");
   fprintf(stderr, "                 default: 8\n\n");
   fprintf(stderr, "  -N           Ignore decryption errors (similar to openssl -nopad).\n\n");
   fprintf(stderr, "  -n           Ignore salt (similar to openssl -nosalt).\n\n");
+  fprintf(stderr, "  -p <n>       Preview and check the first N decrypted bytes for the magic string.\n");
+  fprintf(stderr, "               If the magic string is present, try decrypting the rest of the data.\n");
+  fprintf(stderr, "                 default: 1024\n\n");
   fprintf(stderr, "  -s <string>  Password character set.\n");
   fprintf(stderr, "               default: \"0123456789ABCDEFGHIJKLMNOPQRSTU\n");
   fprintf(stderr, "                         VWXYZabcdefghijklmnopqrstuvwxyz\"\n\n");
@@ -1062,6 +1062,10 @@ int main(int argc, char **argv)
       no_salt = 1;
       break;
 
+    case 'p':
+      preview_len = (unsigned int) atoi(optarg);
+      break;
+
     case 's':
       charset_len = mbstowcs(NULL, optarg, 0);
       if(charset_len == 0)
@@ -1097,10 +1101,6 @@ int main(int argc, char **argv)
       state_file = optarg;
       break;
 
-    case 'p':
-      preview_len = (unsigned int) atoi(optarg);
-      break;
-
     default:
       usage(argv[0]);
       switch(optopt)
@@ -1115,11 +1115,11 @@ int main(int argc, char **argv)
       case 'l':
       case 'M':
       case 'm':
+      case 'p':
       case 's':
       case 't':
       case 'v':
       case 'w':
-      case 'p':
         fprintf(stderr, "Error: missing argument for option: '-%c'.\n\n", optopt);
         break;
 

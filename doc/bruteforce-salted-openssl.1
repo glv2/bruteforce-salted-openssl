@@ -80,8 +80,12 @@ Beginning of the password. The default value is "".
 Cipher for decryption. The default value is aes-256-cbc.
 .TP
 .B
+\fB-D\fP
+Display salt, key and iv along with the tested password.
+.TP
+.B
 \fB-d\fP <digest>
-Digest for key and initialization vector generation. Default: md5.
+Digest for key and initialization vector generation. Default: sha256.
 .TP
 .B
 \fB-e\fP <string>
@@ -94,6 +98,14 @@ Read the passwords from a file instead of generating them.
 .B
 \fB-h\fP
 Show help and quit.
+.TP
+.B
+\fB-i\fP <n>
+With -K, set the PBKDF2 iteration count to <n>. Default: 10000.
+.TP
+.B
+\fB-K\fP
+Use PKCS5_PBKDF2_HMAC to derive the key.
 .TP
 .B
 \fB-L\fP <n>

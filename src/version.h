@@ -2,7 +2,7 @@
 This file is part of bruteforce-salted-openssl, a program trying to
 bruteforce a file encrypted (with salt) by openssl.
 
-Copyright 2014-2018 Guillaume LE VAILLANT
+Copyright 2014-2024 Guillaume LE VAILLANT
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,6 +31,6 @@ the covered work.
 #ifndef VERSION_H
 #define VERSION_H 1
 
-#define VERSION_NUMBER "1.4.2"
+#define VERSION_NUMBER "1.5.0"
 
 #endif

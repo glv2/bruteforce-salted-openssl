@@ -130,7 +130,11 @@ void print_status()
     fprintf(stderr, "Tried passwords: %llu\n", total_ops);
   fprintf(stderr, "Tried passwords per second: %lf\n", pw_per_seconds);
   if(binary == NULL)
+  {
+    pthread_mutex_lock(&get_password_lock);
     fprintf(stderr, "Last tried password: %s\n", last_pass);
+    pthread_mutex_unlock(&get_password_lock);
+  }
   if(dictionary == NULL)
   {
     fprintf(stderr, "Total space searched: %lf%%\n", (total_ops / space) * 100);
